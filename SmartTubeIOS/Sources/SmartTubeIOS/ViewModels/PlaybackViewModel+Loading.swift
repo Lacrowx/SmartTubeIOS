@@ -782,7 +782,7 @@ extension PlaybackViewModel {
                 }
             }
             #if os(tvOS)
-            // Settings → video codec (VP9): try before the regular path, which caps at 1080p H.264.
+            // Settings → video codec (VP9 / AV1): try before the regular path, which caps at 1080p H.264.
             if await tryTVPreferredCodecPlayback(video: video) { return }
             #endif
             // Build player item — preferredStreamURL is guaranteed non-nil here because

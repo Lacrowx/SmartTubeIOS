@@ -256,6 +256,9 @@ public final class PlaybackViewModel {
     /// True while the video is being routed to an external display via AirPlay.
     public internal(set) var isAirPlaying: Bool = false
     @ObservationIgnored nonisolated(unsafe) var airPlayObserver: NSKeyValueObservation?
+    /// Retains the playlist loader behind the tvOS "4K via AV1" item (AVAssetResourceLoader
+    /// holds its delegate weakly). Replaced on each AV1 attempt.
+    @ObservationIgnored var av1PlaylistLoader: InMemoryPlaylistLoader?
     /// Counts exhaustive retry cycles (0 = no retry yet). Set by exhaustiveRetry(video:originalError:).
     var retryAttempts: Int = 0
     /// The stream type that produced the current AVPlayerItem, set by each successful load path.

@@ -144,6 +144,33 @@ public struct PlayerInfo: Sendable {
         return audioOnly.sorted { ($0.bitrate ?? 0) > ($1.bitrate ?? 0) }.first?.url
     }
 
+    /// Best AV1 video-only MP4 format taller than 1080p and no taller than `maximumHeight`
+    /// (`nil` = no cap). Highest height, then fps, then bitrate wins. Returns `nil` when the
+    /// video has no playable AV1 above 1080p, so callers keep the regular 1080p path.
+    public func bestAV1UHDVideoFormat(maximumHeight: Int?) -> VideoFormat? {
+        formats
+            .filter {
+                $0.mimeType.hasPrefix("video/mp4") && $0.mimeType.contains("av01") && $0.url != nil
+                    && $0.height > 1080 && $0.height <= (maximumHeight ?? .max)
+            }
+            .max {
+                ($0.height, $0.fps, $0.bitrate ?? 0) < ($1.height, $1.fps, $1.bitrate ?? 0)
+            }
+    }
+
+    /// AV1 video-only MP4 formats from `minimumHeight` up to `maximumHeight` (`nil` = no cap),
+    /// one per height (best fps, then bitrate), tallest first — the variant ladder for the
+    /// tvOS DASH→HLS AV1 item so AVPlayer can still switch quality with bandwidth.
+    public func av1VideoLadder(minimumHeight: Int = 480, maximumHeight: Int?) -> [VideoFormat] {
+        let candidates = formats.filter {
+            $0.mimeType.hasPrefix("video/mp4") && $0.mimeType.contains("av01") && $0.url != nil
+                && $0.height >= minimumHeight && $0.height <= (maximumHeight ?? .max)
+        }
+        return Dictionary(grouping: candidates, by: \.height).values
+            .compactMap { group in group.max { ($0.fps, $0.bitrate ?? 0) < ($1.fps, $1.bitrate ?? 0) } }
+            .sorted { $0.height > $1.height }
+    }
+
     /// Returns `true` when all adaptive video-only MP4 formats are SABR streams
     /// (signed by TVHTML5, identified by `c=TVHTML5` in the URL).
     /// SABR URLs serve binary UMP protocol data — `AVURLAsset.loadTracks` stalls 60 s

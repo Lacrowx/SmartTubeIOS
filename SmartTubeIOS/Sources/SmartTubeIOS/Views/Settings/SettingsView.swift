@@ -219,7 +219,7 @@ public struct SettingsView: View {
 
             Toggle("Autoplay next video", isOn: $store.settings.autoplayEnabled)
             Toggle("Background Playback", isOn: $store.settings.backgroundPlaybackEnabled)
-            #if !os(iOS)
+            #if os(macOS)
             Toggle("Prefer H.264 Codec", isOn: $store.settings.preferH264)
                 .accessibilityIdentifier("settings.preferH264Toggle")
             #endif
@@ -228,7 +228,8 @@ public struct SettingsView: View {
                 ForEach(AppSettings.TVVideoCodec.allCases, id: \.self) { codec in
                     Text(
                         codec.pickerLabel(
-                            vp9Supported: HLSPlaybackPolicy.vp9DecoderAvailable)
+                            vp9Supported: HLSPlaybackPolicy.vp9DecoderAvailable,
+                            av1Supported: HLSPlaybackPolicy.av1DecoderAvailable)
                     )
                     .tag(codec)
                 }

@@ -73,6 +73,9 @@ struct HLSPlaybackPolicy: Equatable, Sendable {
         #endif
     }()
 
+    /// Whether AV1 can be hardware-decoded (the tvOS "AV1" Video Codec choice).
+    static var av1DecoderAvailable: Bool { VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1) }
+
     func cappedHeight(requested: Int?) -> Int? {
         guard let maximumHeight else { return requested }
         return min(requested ?? maximumHeight, maximumHeight)
@@ -80,8 +83,34 @@ struct HLSPlaybackPolicy: Equatable, Sendable {
 
     func allowsFormat(height: Int, mimeType: String) -> Bool {
         if let maximumHeight, height > maximumHeight { return false }
-        if let allowedVideoCodecs, !allowedVideoCodecs.contains(where: { mimeType.contains($0) }) { return false }
+        // Adaptive WebM formats call SDR VP9 (profile 0) `codecs="vp9"`; HLS calls it `vp09.00`.
+        let codecs = mimeType.replacingOccurrences(of: "\"vp9\"", with: "\"vp09.00\"")
+        if let allowedVideoCodecs, !allowedVideoCodecs.contains(where: { codecs.contains($0) }) { return false }
         return true
+    }
+
+    /// Whether the master manifest keeps VP9 variants (tvOS with the VP9 decoder).
+    var keepsVP9: Bool { allowedVideoCodecs?.contains("vp09.00") == true }
+
+    /// Quality-menu formats for this stream. When VP9 variants are kept, YouTube's 1440p and
+    /// 2160p exist only as VP9, which the adaptive formats list as WebM, so WebM VP9 is
+    /// included, filtered to the allowed codecs, one entry per height and frame rate
+    /// (H.264 first). Otherwise the usual MP4 list.
+    func menuFormats(from formats: [SmartTubeIOSCore.VideoFormat]) -> [SmartTubeIOSCore.VideoFormat] {
+        let mp4 = PlaybackQualityManager.deduplicatedVideoFormats(formats)
+        guard keepsVP9 else { return mp4 }
+        let vp9WebM = formats.filter {
+            $0.url != nil && $0.height > 0 && $0.mimeType.hasPrefix("video/webm") && $0.codecShortLabel == "VP9"
+        }
+        var seen = Set<String>()
+        return (mp4 + vp9WebM)
+            .filter { allowsFormat(height: $0.height, mimeType: $0.mimeType) }
+            .sorted {
+                if $0.height != $1.height { return $0.height > $1.height }
+                if $0.fps != $1.fps { return $0.fps > $1.fps }
+                return $0.mimeType.contains("avc1") && !$1.mimeType.contains("avc1")
+            }
+            .filter { seen.insert("\($0.height)@\($0.fps)").inserted }
     }
 }
 
@@ -1063,16 +1092,18 @@ extension PlaybackViewModel {
             label: label, isHLS: isHLSManifest,
             allowsVP9: settings.tvVideoCodec != .h264 && HLSPlaybackPolicy.vp9DecoderAvailable
         )
-        let newFormats = Self.deduplicatedVideoFormats(info.formats)
+        let newFormats = hlsPolicy.menuFormats(from: info.formats)
         // Never reduce quality options for adaptive/HLS streams — preserve the richest set seen.
         // Exception: muxed fallback (label contains "/muxed") always resets availableFormats to
         // the muxed-only formats. This prevents stale rqh=1-blocked adaptive formats from
         // appearing in the quality picker when they can never actually play.
+        // Also reset for the tvOS VP9 stream: an earlier list's AV1 UHD entries would be
+        // dropped by its codec filter below and hide the VP9 1440p/2160p entries.
         let maxCurrentHeight = availableFormats.map(\.height).max() ?? 0
         let maxNewHeight = newFormats.map(\.height).max() ?? 0
         let isMuxedFallback = label.contains("/muxed")
-        if isMuxedFallback || newFormats.count > availableFormats.count || maxNewHeight > maxCurrentHeight
-            || availableFormats.isEmpty
+        if isMuxedFallback || hlsPolicy.keepsVP9 || newFormats.count > availableFormats.count
+            || maxNewHeight > maxCurrentHeight || availableFormats.isEmpty
         {
             availableFormats = newFormats
         }
@@ -1652,7 +1683,7 @@ extension PlaybackViewModel {
     /// Swaps `compositeItem` into the player and runs the shared `.readyToPlay` bookkeeping
     /// (duration, seek restore, audio tracks, loading state, Phase 2). Extracted from
     /// `attemptComposition` so the tvOS AV1 DASH→HLS path can reuse it.
-    private func playPreparedItem(
+    func playPreparedItem(
         _ compositeItem: AVPlayerItem, for video: Video, info: PlayerInfo, label: String
     ) async -> Bool {
         compositeItem.audioTimePitchAlgorithm = .spectral
@@ -1826,7 +1857,7 @@ extension PlaybackViewModel {
         guard
             let videoURL = PlaybackQualityManager.selectBestVideoFormat(
                 from: info.formats, preferredMaxHeight: maxH,
-                preferH264: settings.preferH264
+                preferH264: settings.prefersH264Formats
             )?.url,
             let audioURL = info.bestAdaptiveAudioURL
         else { return }

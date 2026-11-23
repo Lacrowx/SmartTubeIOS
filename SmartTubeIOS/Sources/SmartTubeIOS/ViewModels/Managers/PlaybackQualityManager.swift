@@ -167,7 +167,10 @@ final class PlaybackQualityManager {
     }
 
     /// Switch to a specific quality. Pass `.auto` to return to Auto (no resolution cap).
-    func selectFormat(_ format: VideoFormat?) {
+    /// - Parameter inPlaceItem: an HLS item whose master already holds every quality (the
+    ///   tvOS AV1 playlist). It is capped with ABR hints instead of being reloaded, since a
+    ///   reload would replace it with YouTube's own HLS stream.
+    func selectFormat(_ format: VideoFormat?, inPlace inPlaceItem: AVPlayerItem? = nil) {
         let previousLabel = selectedFormat.map { "\($0.height)p" } ?? "Auto"
         let newLabel = format.map { "\($0.height)p" } ?? "Auto"
         playerLog.notice("[quality] selectFormat: \(previousLabel) → \(newLabel)")
@@ -193,6 +196,10 @@ final class PlaybackQualityManager {
         delegate?.toastMessage = format.map { "\($0.height)p" } ?? "Auto"
         qualityTask?.cancel()
         qualityTask = nil
+        if let inPlaceItem {
+            applyABRHints(to: inPlaceItem, cap: quality.maxHeight)
+            return
+        }
         guard let delegate else {
             playerLog.error("[quality] selectFormat: delegate is nil — quality reload skipped")
             return
@@ -268,20 +275,7 @@ final class PlaybackQualityManager {
         let effectiveCap =
             hlsPlaybackMaximumHeight.map { min(requestedCap ?? $0, $0) }
             ?? requestedCap
-        if let cap = effectiveCap {
-            let h = CGFloat(cap)
-            let peakBR = peakBitRate(for: cap)
-            item.preferredMaximumResolution = CGSize(width: h * 4, height: h)
-            item.preferredPeakBitRate = peakBR
-            playerLog.notice(
-                "Quality → \(cap)p via HLS master + ABR hints (maxRes=\(Int(h * 4))x\(cap) peakBR=\(Int(peakBR / 1_000_000))Mbps)"
-            )
-        } else {
-            // Auto: remove all constraints so AVPlayer's ABR runs unconstrained.
-            item.preferredMaximumResolution = .zero
-            item.preferredPeakBitRate = 0
-            playerLog.notice("Quality → Auto via HLS master (ABR unconstrained: .zero / 0)")
-        }
+        applyABRHints(to: item, cap: effectiveCap)
         itemObserverTask = Task { [weak self] in
             for await status in item.statusStream {
                 guard let self, !Task.isCancelled else { return }
@@ -370,7 +364,7 @@ final class PlaybackQualityManager {
             playerLog.notice(
                 "[quality] reloadDASHItem: requested=\(fmt.height)p playerInfo mp4 heights=[\(infoMp4Heights)]")
 
-            let h264Pref = delegate?.settings.preferH264 ?? false
+            let h264Pref = delegate?.settings.prefersH264Formats ?? false
             let bestFromInfo = PlaybackQualityManager.selectBestVideoFormat(
                 from: info.formats, preferredMaxHeight: fmt.height,
                 preferH264: h264Pref
@@ -401,7 +395,7 @@ final class PlaybackQualityManager {
             videoURL =
                 PlaybackQualityManager.selectBestVideoFormat(
                     from: info.formats, preferredMaxHeight: nil,
-                    preferH264: delegate?.settings.preferH264 ?? false
+                    preferH264: delegate?.settings.prefersH264Formats ?? false
                 )?.url
         }
 
@@ -507,7 +501,7 @@ final class PlaybackQualityManager {
     /// as separate picker entries — the picker label includes the codec ("1080p H.264",
     /// "1080p AV1"). Selecting a specific entry uses that format's URL directly, so the
     /// user gets exactly the codec they tapped.
-    static func deduplicatedVideoFormats(_ formats: [VideoFormat]) -> [VideoFormat] {
+    nonisolated static func deduplicatedVideoFormats(_ formats: [VideoFormat]) -> [VideoFormat] {
         let candidates = formats.filter {
             $0.url != nil && $0.height > 0 && $0.mimeType.hasPrefix("video/mp4")
         }
@@ -586,6 +580,24 @@ final class PlaybackQualityManager {
         let sortedKeys = Self.bitRateCaps.keys.sorted()
         let lower = sortedKeys.last(where: { $0 <= height }) ?? sortedKeys.first ?? 480
         return Self.bitRateCaps[lower] ?? 4_000_000
+    }
+
+    /// Caps an HLS item's ABR at `cap` lines, or removes every constraint for Auto (`nil`).
+    private func applyABRHints(to item: AVPlayerItem, cap: Int?) {
+        if let cap {
+            let h = CGFloat(cap)
+            let peakBR = peakBitRate(for: cap)
+            item.preferredMaximumResolution = CGSize(width: h * 4, height: h)
+            item.preferredPeakBitRate = peakBR
+            playerLog.notice(
+                "Quality → \(cap)p via HLS master + ABR hints (maxRes=\(Int(h * 4))x\(cap) peakBR=\(Int(peakBR / 1_000_000))Mbps)"
+            )
+        } else {
+            // Auto: remove all constraints so AVPlayer's ABR runs unconstrained.
+            item.preferredMaximumResolution = .zero
+            item.preferredPeakBitRate = 0
+            playerLog.notice("Quality → Auto via HLS master (ABR unconstrained: .zero / 0)")
+        }
     }
 
     func reloadHLSItemH264Capped(seekTo time: TimeInterval) async {

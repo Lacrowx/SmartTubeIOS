@@ -167,35 +167,52 @@ public struct AppSettings: Codable {
     public var preferH264: Bool
 
     /// tvOS video codec for playback above 1080p. YouTube's HLS streams carry H.264 only up
-    /// to 1080p; higher tiers are VP9 (needs Apple's supplemental VP9 decoder, tvOS 26.2+).
-    /// A choice the device cannot decode falls back to H.264.
+    /// to 1080p; higher tiers are VP9 (needs Apple's supplemental VP9 decoder, tvOS 26.2+)
+    /// or, outside HLS, AV1. A choice the device cannot decode falls back: AV1 to VP9, VP9 to
+    /// H.264.
     public enum TVVideoCodec: String, Codable, CaseIterable, Sendable {
         /// YouTube's HLS stream limited to H.264 (up to 1080p).
         case h264
         /// YouTube's HLS stream with SDR VP9 variants (up to 2160p).
         case vp9
+        /// AV1 adaptive files played through an app-built HLS playlist (up to 2160p).
+        case av1
 
         /// Codecs to try before the regular H.264 path, best first, limited to what the device
         /// decodes. Empty means the regular path plays (H.264 up to 1080p).
-        public func playbackOrder(vp9Supported: Bool) -> [TVVideoCodec] {
+        public func playbackOrder(vp9Supported: Bool, av1Supported: Bool = false) -> [TVVideoCodec] {
             let vp9: [TVVideoCodec] = vp9Supported ? [.vp9] : []
             switch self {
             case .h264: return []
             case .vp9: return vp9
+            case .av1: return (av1Supported ? [.av1] : []) + vp9
             }
         }
 
         /// Settings picker label; names what plays instead when the device can't decode it.
-        public func pickerLabel(vp9Supported: Bool) -> String {
-            let plays = playbackOrder(vp9Supported: vp9Supported).first ?? .h264
+        public func pickerLabel(vp9Supported: Bool, av1Supported: Bool = false) -> String {
+            let plays = playbackOrder(vp9Supported: vp9Supported, av1Supported: av1Supported).first ?? .h264
             switch (self, plays) {
             case (.h264, _): return "H.264 (up to 1080p)"
             case (.vp9, .vp9): return "VP9 (up to 4K)"
             case (.vp9, _): return "VP9 (not supported, plays H.264)"
+            case (.av1, .av1): return "AV1 (up to 4K, experimental)"
+            case (.av1, .vp9): return "AV1 (not supported, plays VP9)"
+            case (.av1, _): return "AV1 (not supported, plays H.264)"
             }
         }
     }
     public var tvVideoCodec: TVVideoCodec
+
+    /// Whether adaptive-format selection prefers H.264. On tvOS the Video Codec picker
+    /// replaces the "Prefer H.264 Codec" toggle, so choosing H.264 there is the preference.
+    public var prefersH264Formats: Bool {
+        #if os(tvOS)
+        tvVideoCodec == .h264
+        #else
+        preferH264
+        #endif
+    }
 
     // MARK: iCloud sync
     /// When `true`, local user data (subscriptions, RSS feeds, video state, queue) is
@@ -489,7 +506,9 @@ extension AppSettings {
         poTokenServiceURL = c.safeDecode(URL?.self, forKey: .poTokenServiceURL, default: d.poTokenServiceURL)
         audioOnlyMode = c.safeDecode(Bool.self, forKey: .audioOnlyMode, default: d.audioOnlyMode)
         preferH264 = c.safeDecode(Bool.self, forKey: .preferH264, default: d.preferH264)
-        tvVideoCodec = c.safeDecode(TVVideoCodec.self, forKey: .tvVideoCodec, default: d.tvVideoCodec)
+        // Settings saved before the Video Codec picker existed: "Prefer H.264 Codec" on means H.264.
+        tvVideoCodec = c.safeDecode(
+            TVVideoCodec.self, forKey: .tvVideoCodec, default: preferH264 ? .h264 : d.tvVideoCodec)
         iCloudSyncEnabled = c.safeDecode(Bool.self, forKey: .iCloudSyncEnabled, default: d.iCloudSyncEnabled)
         useTOSPlayerOnMac = c.safeDecode(Bool.self, forKey: .useTOSPlayerOnMac, default: d.useTOSPlayerOnMac)
     }

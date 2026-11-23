@@ -126,4 +126,36 @@ struct VisionOSPlaybackTests {
         #expect(!filtered.contains("vp9-1080.m3u8"))
         #expect(!filtered.contains("h264-2160.m3u8"))
     }
+
+    @Test("VP9 policy lists WebM VP9 UHD in the quality menu, one entry per height and fps")
+    func vp9MenuFormats() {
+        let url = URL(string: "https://example.com/v")
+        func fmt(_ height: Int, _ fps: Int, _ mime: String) -> VideoFormat {
+            VideoFormat(label: "\(height)p", width: height * 16 / 9, height: height, fps: fps, mimeType: mime, url: url)
+        }
+        let formats = [
+            fmt(2160, 60, #"video/webm; codecs="vp9""#),
+            fmt(2160, 60, #"video/mp4; codecs="av01.0.13M.08""#),
+            fmt(2160, 60, #"video/webm; codecs="vp09.02.51.10.01.09.16.09.00""#),
+            fmt(1440, 60, #"video/webm; codecs="vp9""#),
+            fmt(1080, 60, #"video/mp4; codecs="avc1.64002a""#),
+            fmt(1080, 60, #"video/webm; codecs="vp9""#),
+        ]
+        let vp9 = HLSPlaybackPolicy.resolve(label: "VisionOS/HLS", isHLS: true, allowsVP9: true)
+        let menu = vp9.menuFormats(from: formats)
+        #expect(menu.map(\.height) == [2160, 1440, 1080])
+        #expect(menu.map(\.codecShortLabel) == ["VP9", "VP9", "H.264"])
+
+        let h264 = HLSPlaybackPolicy.resolve(label: "VisionOS/HLS", isHLS: true)
+        #expect(!h264.keepsVP9)
+        #expect(h264.menuFormats(from: formats).allSatisfy { $0.mimeType.hasPrefix("video/mp4") })
+    }
+
+    @Test("SDR VP9 WebM formats count as vp09.00 for the codec filter")
+    func webmVP9MatchesVP9Filter() {
+        let vp9 = HLSPlaybackPolicy.resolve(label: "VisionOS/HLS", isHLS: true, allowsVP9: true)
+        #expect(vp9.allowsFormat(height: 2160, mimeType: #"video/webm; codecs="vp9""#))
+        #expect(!vp9.allowsFormat(height: 2160, mimeType: #"video/webm; codecs="vp09.02.51.10.01.09.16.09.00""#))
+        #expect(!vp9.allowsFormat(height: 2160, mimeType: #"video/mp4; codecs="av01.0.13M.08""#))
+    }
 }
