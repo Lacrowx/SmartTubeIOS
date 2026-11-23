@@ -51,6 +51,14 @@ struct VisionOSPlaybackTests {
         #expect(policy.cappedHeight(requested: 2160) == 2160)
     }
 
+    @Test("VisionOS with VP9 on an HDR display also keeps HDR VP9.2")
+    func visionOSVP9HDRPolicy() {
+        let policy = HLSPlaybackPolicy.resolve(label: "VisionOS/HLS", isHLS: true, allowsVP9: true, allowsHDR: true)
+        #expect(policy.allowedVideoCodecs == ["avc1", "vp09.00", "vp09.02"])
+        let noVP9 = HLSPlaybackPolicy.resolve(label: "VisionOS/HLS", isHLS: true, allowsVP9: false, allowsHDR: true)
+        #expect(noVP9.allowedVideoCodecs == ["avc1"])
+    }
+
     @Test("VP9 filter keeps SDR VP9 UHD and drops HDR VP9.2")
     func filtersMultivariantWithVP9() {
         let manifest = """

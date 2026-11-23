@@ -22,8 +22,10 @@ struct HLSPlaybackPolicy: Equatable, Sendable {
     /// Video codecs the master manifest is filtered to (substring of `CODECS`); `nil` = no filter.
     let allowedVideoCodecs: [String]?
 
-    /// - Parameter allowsVP9: keep SDR VP9 (`vp09.00`) variants and drop the 1080p H.264 cap.
-    static func resolve(label: String, isHLS: Bool, allowsVP9: Bool = false) -> Self {
+    /// - Parameters:
+    ///   - allowsVP9: keep SDR VP9 (`vp09.00`) variants and drop the 1080p H.264 cap.
+    ///   - allowsHDR: with `allowsVP9`, also keep HDR VP9 (`vp09.02`, PQ) variants.
+    static func resolve(label: String, isHLS: Bool, allowsVP9: Bool = false, allowsHDR: Bool = false) -> Self {
         guard isHLS else {
             return Self(
                 userAgent: "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X)",
@@ -37,7 +39,8 @@ struct HLSPlaybackPolicy: Equatable, Sendable {
                 userAgent: InnerTubeClients.VisionOS.userAgent,
                 maximumHeight: allowsVP9 ? nil : InnerTubeClients.VisionOS.maximumHLSHeight,
                 filtersMasterManifest: true,
-                allowedVideoCodecs: allowsVP9 ? ["avc1", "vp09.00"] : ["avc1"]
+                allowedVideoCodecs: allowsVP9
+                    ? (allowsHDR ? ["avc1", "vp09.00", "vp09.02"] : ["avc1", "vp09.00"]) : ["avc1"]
             )
         }
         if label.contains("WebSafari") {
@@ -1090,7 +1093,8 @@ extension PlaybackViewModel {
         let isHLSManifest = label.contains("/HLS")
         let hlsPolicy = HLSPlaybackPolicy.resolve(
             label: label, isHLS: isHLSManifest,
-            allowsVP9: settings.tvVideoCodec != .h264 && HLSPlaybackPolicy.vp9DecoderAvailable
+            allowsVP9: settings.tvVideoCodec != .h264 && HLSPlaybackPolicy.vp9DecoderAvailable,
+            allowsHDR: AVPlayer.eligibleForHDRPlayback
         )
         let newFormats = hlsPolicy.menuFormats(from: info.formats)
         // Never reduce quality options for adaptive/HLS streams — preserve the richest set seen.

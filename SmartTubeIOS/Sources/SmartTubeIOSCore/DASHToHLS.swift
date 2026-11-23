@@ -106,10 +106,12 @@ public enum DASHToHLS {
         public let frameRate: Int
         public let peakBitrate: Int
         public let averageBitrate: Int
+        /// HLS `VIDEO-RANGE` (`SDR`, `PQ`, `HLG`); derived from `codecs` by default.
+        public let videoRange: String
 
         public init(
             uri: String, codecs: String, width: Int, height: Int, frameRate: Int, peakBitrate: Int,
-            averageBitrate: Int
+            averageBitrate: Int, videoRange: String? = nil
         ) {
             self.uri = uri
             self.codecs = codecs
@@ -118,6 +120,26 @@ public enum DASHToHLS {
             self.frameRate = frameRate
             self.peakBitrate = peakBitrate
             self.averageBitrate = averageBitrate
+            self.videoRange = videoRange ?? DASHToHLS.videoRange(fromCodecs: codecs)
+        }
+    }
+
+    /// HLS `VIDEO-RANGE` from an AV1/VP9 codec string's transfer characteristics:
+    /// `av01.P.LLT.DD.M.CCC.cp.tc.mc.F` / `vp09.PP.LL.DD.CC.cp.tc.mc.FF` (`tc` 16 = PQ, 18 = HLG).
+    /// Short forms such as `av01.0.12M.08` carry no colour info and are SDR.
+    public static func videoRange(fromCodecs codecs: String) -> String {
+        let parts = codecs.split(separator: ".").map(String.init)
+        let transferIndex: Int
+        switch parts.first {
+        case "av01": transferIndex = 7
+        case "vp09": transferIndex = 6
+        default: return "SDR"
+        }
+        guard parts.count > transferIndex else { return "SDR" }
+        switch Int(parts[transferIndex]) {
+        case 16: return "PQ"
+        case 18: return "HLG"
+        default: return "SDR"
         }
     }
 
@@ -156,7 +178,7 @@ public enum DASHToHLS {
                 "#EXT-X-STREAM-INF:BANDWIDTH=\(variant.peakBitrate + audioPeakBitrate),"
                     + "AVERAGE-BANDWIDTH=\(variant.averageBitrate + audioAverageBitrate),"
                     + "CODECS=\"\(variant.codecs),\(audioCodec)\",RESOLUTION=\(variant.width)x\(variant.height),"
-                    + "FRAME-RATE=\(variant.frameRate),AUDIO=\"aud\"")
+                    + "FRAME-RATE=\(variant.frameRate),VIDEO-RANGE=\(variant.videoRange),AUDIO=\"aud\"")
             lines.append(variant.uri)
         }
         return lines.joined(separator: "\n") + "\n"

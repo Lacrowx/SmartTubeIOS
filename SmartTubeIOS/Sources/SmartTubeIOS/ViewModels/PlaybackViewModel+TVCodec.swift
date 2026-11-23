@@ -59,8 +59,12 @@ extension PlaybackViewModel {
             return false
         }
         let cap = effectiveQuality.maxHeight
-        let ladder = info.av1VideoLadder(maximumHeight: cap)
-        guard info.bestAV1UHDVideoFormat(maximumHeight: cap) != nil,
+        // HDR videos only have 10-bit PQ AV1; keep those only when the display can show HDR.
+        let hdrOK = AVPlayer.eligibleForHDRPlayback
+        let ladder = info.av1VideoLadder(maximumHeight: cap).filter { format in
+            hdrOK || DASHToHLS.codecs(fromMimeType: format.mimeType).map(DASHToHLS.videoRange(fromCodecs:)) == "SDR"
+        }
+        guard ladder.contains(where: { $0.height > 1080 }),
             let audioURL = info.bestAdaptiveAudioURL,
             let audio = info.formats.first(where: { $0.url == audioURL }),
             let audioCodec = DASHToHLS.codecs(fromMimeType: audio.mimeType)
@@ -105,7 +109,7 @@ extension PlaybackViewModel {
             variants: variants, audioURI: "audio.m3u8", audioCodec: audioCodec,
             audioPeakBitrate: audioIndex.peakBitrate, audioAverageBitrate: audioIndex.averageBitrate)
         playerLog.notice(
-            "[VisionOS/AV1] DASH→HLS variants=\(variants.map(\.height)) audio=\(audio.mimeType) segments=\(audioIndex.segments.count)"
+            "[VisionOS/AV1] DASH→HLS variants=\(variants.map { "\($0.height)p \($0.videoRange)" }) hdrDisplay=\(hdrOK) audio=\(audio.mimeType)"
         )
 
         let loader = InMemoryPlaylistLoader(playlists: playlists)

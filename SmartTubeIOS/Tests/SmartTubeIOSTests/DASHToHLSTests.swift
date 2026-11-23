@@ -123,6 +123,31 @@ struct DASHToHLSTests {
         #expect(text.contains("BANDWIDTH=20130000,AVERAGE-BANDWIDTH=15128000,CODECS=\"av01.0.12M.08,mp4a.40.2\""))
     }
 
+    @Test("VIDEO-RANGE comes from the codec string's transfer characteristics")
+    func videoRangeFromCodecs() {
+        #expect(DASHToHLS.videoRange(fromCodecs: "av01.0.13M.10.0.110.09.16.09.0") == "PQ")
+        #expect(DASHToHLS.videoRange(fromCodecs: "av01.0.13M.10.0.110.09.18.09.0") == "HLG")
+        #expect(DASHToHLS.videoRange(fromCodecs: "av01.0.12M.08") == "SDR")
+        #expect(DASHToHLS.videoRange(fromCodecs: "vp09.02.51.10.01.09.16.09.00") == "PQ")
+        #expect(DASHToHLS.videoRange(fromCodecs: "vp09.00.51.08") == "SDR")
+        #expect(DASHToHLS.videoRange(fromCodecs: "avc1.640028") == "SDR")
+    }
+
+    @Test("master playlist marks HDR variants with VIDEO-RANGE=PQ")
+    func multivariantPlaylistVideoRange() {
+        let hdr = DASHToHLS.Variant(
+            uri: "v.m3u8", codecs: "av01.0.13M.10.0.110.09.16.09.0", width: 3840, height: 2160, frameRate: 60,
+            peakBitrate: 1, averageBitrate: 1)
+        let sdr = DASHToHLS.Variant(
+            uri: "s.m3u8", codecs: "av01.0.12M.08", width: 3840, height: 2160, frameRate: 30, peakBitrate: 1,
+            averageBitrate: 1)
+        let text = DASHToHLS.multivariantPlaylist(
+            variants: [hdr, sdr], audioURI: "a.m3u8", audioCodec: "mp4a.40.2", audioPeakBitrate: 0,
+            audioAverageBitrate: 0)
+        #expect(text.contains("FRAME-RATE=60,VIDEO-RANGE=PQ,AUDIO=\"aud\"\nv.m3u8"))
+        #expect(text.contains("FRAME-RATE=30,VIDEO-RANGE=SDR,AUDIO=\"aud\"\ns.m3u8"))
+    }
+
     @Test("codecs are read from a YouTube mimeType")
     func codecsFromMime() {
         #expect(DASHToHLS.codecs(fromMimeType: #"video/mp4; codecs="av01.0.12M.08""#) == "av01.0.12M.08")
