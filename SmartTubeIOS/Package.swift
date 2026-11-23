@@ -46,7 +46,13 @@ let package = Package(
                 .copy("Resources/yt.solver.lib.min.js"),
                 .copy("Resources/yt.solver.core.min.js"),
             ],
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            swiftSettings: [.swiftLanguageMode(.v6)],
+            linkerSettings: [
+                // tvOS uses AVKit only through its UIWindow category (`avDisplayManager`), which
+                // references no AVKit symbol, so auto-linking drops AVKit and the call crashes
+                // with "unrecognized selector". Link it explicitly.
+                .linkedFramework("AVKit", .when(platforms: [.tvOS]))
+            ]
         ),
         // MARK: Tests
         .testTarget(

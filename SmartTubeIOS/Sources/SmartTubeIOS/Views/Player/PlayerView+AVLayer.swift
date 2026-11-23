@@ -8,6 +8,11 @@ import UIKit
 #if canImport(AppKit)
 import AppKit
 #endif
+#if os(tvOS)
+import os
+
+private let displayLog = Logger(subsystem: "com.void.smarttube.app", category: "Player")
+#endif
 
 // MARK: - Platform-specific AVKit / UIKit views
 //
@@ -75,13 +80,50 @@ struct PlayerAVLayerView: UIViewRepresentable {
     func updateUIView(_ uiView: _PlayerUIView, context: Context) {
         uiView.playerLayer.player = player
         uiView.playerLayer.videoGravity = videoGravity
+        #if os(tvOS)
+        uiView.matchDisplay(to: player)
+        #endif
     }
+
+    #if os(tvOS)
+    /// SwiftUI is done with this view (the player closed, or it rebuilt the view).
+    static func dismantleUIView(_ uiView: _PlayerUIView, coordinator: ()) {
+        PlayerDisplayMatcher.shared.release(ObjectIdentifier(uiView))
+    }
+    #endif
 
     final class _PlayerUIView: UIView {
         override static var layerClass: AnyClass { AVPlayerLayer.self }
         var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
         var onLayerReady: ((AVPlayerLayer) -> Void)?
         private var didFireCallback = false
+
+        #if os(tvOS)
+        // Match Content: reports what this view shows to `PlayerDisplayMatcher`, which
+        // owns the window's display criteria.
+        private weak var observedPlayer: AVPlayer?
+        private var currentItemObservation: NSKeyValueObservation?
+
+        func matchDisplay(to player: AVPlayer?) {
+            guard player !== observedPlayer else { return }
+            observedPlayer = player
+            currentItemObservation = player?.observe(\.currentItem, options: [.initial, .new]) { [weak self] _, _ in
+                Task { @MainActor in self?.reportShownItem() }
+            }
+        }
+
+        private func reportShownItem() {
+            // Off screen: report again from didMoveToWindow.
+            guard let window else { return }
+            PlayerDisplayMatcher.shared.show(
+                observedPlayer?.currentItem?.asset, in: window, from: ObjectIdentifier(self))
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window != nil { reportShownItem() }
+        }
+        #endif
 
         override func willMove(toWindow newWindow: UIWindow?) {
             super.willMove(toWindow: newWindow)
@@ -95,6 +137,80 @@ struct PlayerAVLayerView: UIViewRepresentable {
         }
     }
 }
+
+// MARK: - PlayerDisplayMatcher (tvOS)
+
+#if os(tvOS)
+/// Match Content for the tvOS player. AVPlayerViewController asks tvOS for the display mode
+/// of what it plays (`appliesPreferredDisplayCriteriaAutomatically`); the bare AVPlayerLayer
+/// used here does not, so with "Match Dynamic Range" / "Match Frame Rate" on the TV stayed in
+/// its default mode. The current item's preferred criteria (from the master playlist's
+/// VIDEO-RANGE and FRAME-RATE) go to the window's display manager.
+///
+/// One owner for all player views: SwiftUI rebuilds the player's layer view whenever the
+/// player's focusability changes (opening the More menu or another overlay). When each view
+/// owned the criteria, the outgoing view cleared what the incoming one had just set, and the
+/// TV switched to its default mode and back. Here criteria change only with the item, and are
+/// cleared only after no player view has been left for `releaseGrace`.
+@MainActor
+final class PlayerDisplayMatcher {
+    static let shared = PlayerDisplayMatcher()
+
+    /// Covers a view being torn down before its replacement attaches (~10 ms on an Apple TV).
+    private static let releaseGrace: Duration = .milliseconds(750)
+
+    private var activeViews = Set<ObjectIdentifier>()
+    private weak var window: UIWindow?
+    private var assetID: ObjectIdentifier?
+    private var loadTask: Task<Void, Never>?
+    private var releaseTask: Task<Void, Never>?
+
+    /// A player view in `window` shows `asset` (`nil`: no item).
+    func show(_ asset: AVAsset?, in window: UIWindow, from view: ObjectIdentifier) {
+        activeViews.insert(view)
+        releaseTask?.cancel()
+        releaseTask = nil
+        guard let asset else {
+            clear(reason: "no item")
+            return
+        }
+        let id = ObjectIdentifier(asset)
+        // Requested already: setting the same criteria again can still trigger a mode switch.
+        if self.window === window, assetID == id { return }
+        self.window = window
+        assetID = id
+        loadTask?.cancel()
+        loadTask = Task { [weak self] in
+            let criteria = try? await asset.load(.preferredDisplayCriteria)
+            guard !Task.isCancelled, let window = self?.window else { return }
+            window.avDisplayManager.preferredDisplayCriteria = criteria
+            displayLog.notice("[display] preferred criteria: \(String(describing: criteria))")
+        }
+    }
+
+    /// A player view was dismantled. Once none is left, hand the display back to the
+    /// user's default mode.
+    func release(_ view: ObjectIdentifier) {
+        activeViews.remove(view)
+        guard activeViews.isEmpty else { return }
+        releaseTask?.cancel()
+        releaseTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.releaseGrace)
+            guard !Task.isCancelled, let self, self.activeViews.isEmpty else { return }
+            self.clear(reason: "player closed")
+        }
+    }
+
+    private func clear(reason: String) {
+        loadTask?.cancel()
+        guard let window else { return }
+        window.avDisplayManager.preferredDisplayCriteria = nil
+        self.window = nil
+        assetID = nil
+        displayLog.notice("[display] cleared criteria (\(reason))")
+    }
+}
+#endif
 
 // MARK: - PiPDelegate
 
