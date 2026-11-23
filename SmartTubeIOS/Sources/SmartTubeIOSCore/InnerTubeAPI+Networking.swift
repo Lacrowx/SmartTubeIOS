@@ -631,7 +631,7 @@ extension InnerTubeAPI {
     /// Uses the mobile web client which per yt-dlp does not require a PO Token for HLS
     /// (`required=False`) and has no embed restriction — returns `hlsManifestUrl` for a
     /// wider set of videos than WEB_EMBEDDED_PLAYER.
-    func postMWEB(body: [String: Any]) async throws -> [String: Any] {
+    func postMWEB(body: [String: Any], withWebSession: Bool = false) async throws -> [String: Any] {
         guard
             var comps = URLComponents(
                 url: baseURL.appendingPathComponent("player"),
@@ -649,10 +649,12 @@ extension InnerTubeAPI {
         request.setValue(InnerTubeClients.MWEB.nameID, forHTTPHeaderField: "X-YouTube-Client-Name")
         request.setValue(InnerTubeClients.MWEB.version, forHTTPHeaderField: "X-YouTube-Client-Version")
         // Note: www.youtube.com uses cookie-based auth, not Bearer tokens.
-        // Sending Authorization: Bearer causes HTTP 400. Auth is omitted here.
+        // Sending Authorization: Bearer causes HTTP 400. Auth is omitted here unless the
+        // caller asks for the web session (cookies + SAPISIDHASH, see WebSession).
+        if withWebSession, let sid = sapisid { applyWebSessionAuth(sapisid: sid, to: &request) }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let videoId = body["videoId"] as? String ?? ""
-        tubeLog.notice("POST /player [MWEB] videoId=\(videoId, privacy: .public)")
+        tubeLog.notice("POST /player [MWEB] videoId=\(videoId, privacy: .public) webSession=\(withWebSession)")
         let (data, response) = try await session.data(for: request)
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {

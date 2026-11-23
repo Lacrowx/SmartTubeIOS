@@ -23,4 +23,13 @@ struct HLSNChallengeTests {
         let solved = HLSNChallenge.replacing("SCRAMBLED_n1", with: "solved", in: segment)
         #expect(solved?.absoluteString.contains("/n/solved/rqh/1/") == true)
     }
+
+    @Test func solvesTheQueryValueOfAdaptiveURLs() throws {
+        let url = try #require(URL(string: "https://rr1.googlevideo.com/videoplayback?itag=401&n=abc&rqh=1"))
+        #expect(HLSNChallenge.queryValue(in: url) == "abc")
+        let solved = HLSNChallenge.solvingQueryValue(in: url, with: ["abc": "xyz"])
+        #expect(HLSNChallenge.queryValue(in: solved) == "xyz")
+        #expect(solved.absoluteString.contains("itag=401"))
+        #expect(HLSNChallenge.solvingQueryValue(in: url, with: [:]) == url)
+    }
 }

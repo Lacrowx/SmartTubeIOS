@@ -38,6 +38,30 @@ extension PlaybackViewModel {
         }
     }
 
+    /// After YouTube's bot check: MWEB through the web session, with every format's `n`
+    /// solved, for the tvOS AV1 UHD path (the WEB response's AV1/VP9 formats are SABR-only).
+    /// Nil without a web session or when the files can't be prepared.
+    func adaptivePlayerInfoThroughWebSession(videoId: String) async -> PlayerInfo? {
+        guard let sapisid = WebSession.storedSAPISID() else { return nil }
+        await api.setSAPISID(sapisid)
+        do {
+            let player = try await NChallengeSolver.shared.currentPlayer()
+            let info = try await api.fetchPlayerInfoMWEBWebSession(
+                videoId: videoId, signatureTimestamp: player.signatureTimestamp)
+            let solutions = try await NChallengeSolver.shared.solve(info.nChallenges, player: player)
+            let solved = info.solvingNChallenges(solutions)
+            // The CDN refuses fresh URLs for a moment; wait until the top file is served.
+            if let top = solved.av1VideoLadder(maximumHeight: nil).first?.url {
+                guard (200..<300).contains(await WebSessionHLS.waitUntilServed(top)) else { return nil }
+            }
+            webSessionLog.notice("web session: adaptive formats ready for \(videoId, privacy: .public)")
+            return solved
+        } catch {
+            webSessionLog.error("web session adaptive failed: \(String(describing: error), privacy: .public)")
+            return nil
+        }
+    }
+
     /// An asset for `manifest` that loads its playlists through `YTHLSProxyLoader` with the
     /// solved `n`, or nil when the current stream didn't come through the web session.
     func webSessionAsset(for manifest: URL) -> AVURLAsset? {

@@ -6,7 +6,7 @@ private let webHLSLog = Logger(subsystem: appSubsystem, category: "WebSessionHLS
 
 /// Prepares an HLS stream from a web-session `/player` response (see `WebSession`) for
 /// AVPlayer: finds the scrambled `n` its segments carry, solves it with `NChallengeSolver`,
-/// and waits until the CDN serves a segment with the solved value. Observed: right after the
+/// and waits until the CDN serves a segment with the solved value (`waitUntilServed`). Observed: right after the
 /// `/player` response the CDN still answers 403 for about 1.5 s, then 200.
 enum WebSessionHLS {
 
@@ -36,17 +36,25 @@ enum WebSessionHLS {
             let solvedSegment = HLSNChallenge.replacing(unsolved, with: solved, in: segment)
         else { throw PrepareError.playlist("n not solved") }
 
+        let status = await waitUntilServed(solvedSegment)
+        guard (200..<300).contains(status) else { throw PrepareError.segmentRefused(status) }
+        return (unsolved, solved)
+    }
+
+    /// Requests the first bytes of `url` until the CDN serves them (2xx) or the attempts run
+    /// out; returns the last HTTP status.
+    static func waitUntilServed(_ url: URL) async -> Int {
         var status = 0
         for attempt in 1...readinessAttempts {
-            status = await statusCode(of: solvedSegment)
+            status = await statusCode(of: url)
             if (200..<300).contains(status) {
-                webHLSLog.notice("segment ready after \(attempt) attempt(s)")
-                return (unsolved, solved)
+                webHLSLog.notice("served after \(attempt) attempt(s)")
+                return status
             }
-            try await Task.sleep(for: readinessInterval)
+            try? await Task.sleep(for: readinessInterval)
         }
-        webHLSLog.error("segment still refused: HTTP \(status)")
-        throw PrepareError.segmentRefused(status)
+        webHLSLog.error("still refused: HTTP \(status)")
+        return status
     }
 
     private static func request(for url: URL) -> URLRequest {

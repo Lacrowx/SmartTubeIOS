@@ -252,6 +252,22 @@ extension InnerTubeAPI {
         return try parsePlayerInfo(from: data, videoId: videoId)
     }
 
+    /// MWEB through the web session (see `WebSession`). On a network YouTube bot-checks, this
+    /// still returns adaptive formats with direct URLs up to 2160p (AV1 and VP9); their `n`
+    /// must be solved for the player script whose `signatureTimestamp` is sent here.
+    public func fetchPlayerInfoMWEBWebSession(videoId: String, signatureTimestamp: Int) async throws -> PlayerInfo {
+        let clientFields = (mwebClientContext["client"] as? [String: Any]) ?? [:]
+        var body = makeBody(client: ["client": clientFields])
+        body["videoId"] = videoId
+        body["racyCheckOk"] = true
+        body["contentCheckOk"] = true
+        body["playbackContext"] = [
+            "contentPlaybackContext": ["html5Preference": "HTML5_PREF_WANTS", "signatureTimestamp": signatureTimestamp]
+        ]
+        let data = try await postMWEB(body: body, withWebSession: true)
+        return try parsePlayerInfo(from: data, videoId: videoId)
+    }
+
     /// Fetches player info using the WEB_CREATOR (YouTube Studio) client.
     /// Per yt-dlp documentation, this client is exempt from rqh=1 CDN enforcement on
     /// adaptive streams — the returned video/audio URLs do NOT require a pot= token.

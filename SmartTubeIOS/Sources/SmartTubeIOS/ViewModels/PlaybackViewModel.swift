@@ -262,7 +262,7 @@ public final class PlaybackViewModel {
     #if os(tvOS)
     /// The VisionOS player request for the tvOS VP9/AV1 path, started at the top of
     /// `loadAsync` so it runs alongside the regular request. Shared by the AV1 and VP9 attempts.
-    @ObservationIgnored var tvCodecInfoFetch: (videoId: String, task: Task<PlayerInfo?, Never>)?
+    @ObservationIgnored var tvCodecInfoFetch: (videoId: String, task: Task<Result<PlayerInfo, any Error>, Never>)?
     #endif
     /// The solved `n` pair when the current video's stream came through the web session
     /// (`PlaybackViewModel+WebSession.swift`); nil otherwise. Reset on every load.

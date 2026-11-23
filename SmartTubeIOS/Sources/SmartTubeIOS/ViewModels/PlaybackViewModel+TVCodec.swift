@@ -24,7 +24,17 @@ extension PlaybackViewModel {
         tvCodecInfoFetch = nil
         guard !tvCodecPlaybackOrder.isEmpty else { return }
         let api = self.api
-        tvCodecInfoFetch = (videoId, Task { try? await api.fetchPlayerInfoVisionOS(videoId: videoId) })
+        tvCodecInfoFetch = (videoId, Task { await Self.visionOSInfo(api: api, videoId: videoId) })
+    }
+
+    /// The VisionOS player request, keeping its error: a bot check sends the UHD paths through
+    /// the web session.
+    private static func visionOSInfo(api: InnerTubeAPI, videoId: String) async -> Result<PlayerInfo, any Error> {
+        do {
+            return .success(try await api.fetchPlayerInfoVisionOS(videoId: videoId))
+        } catch {
+            return .failure(error)
+        }
     }
 
     /// Plays `video` with the codec chosen in `settings.tvVideoCodec` before the regular
@@ -39,13 +49,19 @@ extension PlaybackViewModel {
         }
         guard !order.isEmpty else { return false }
         // One VisionOS request serves both AV1 and VP9; reuse the one loadAsync started.
-        let info: PlayerInfo?
+        let result: Result<PlayerInfo, any Error>
         if let fetch = tvCodecInfoFetch, fetch.videoId == video.id {
-            info = await fetch.task.value
+            result = await fetch.task.value
         } else {
-            info = try? await api.fetchPlayerInfoVisionOS(videoId: video.id)
+            result = await Self.visionOSInfo(api: api, videoId: video.id)
         }
-        guard let info else {
+        let info: PlayerInfo
+        switch result {
+        case .success(let visionOSInfo):
+            info = visionOSInfo
+        case .failure(APIError.ipBlocked):
+            return await tryUHDThroughWebSession(video: video, order: order)
+        case .failure:
             playerLog.notice("[VisionOS] player request failed — falling back")
             return false
         }
@@ -60,6 +76,17 @@ extension PlaybackViewModel {
             }
         }
         return false
+    }
+
+    /// Bot check: the VisionOS request is refused, but the web session's MWEB formats carry
+    /// the same AV1 ladder.
+    private func tryUHDThroughWebSession(video: Video, order: [AppSettings.TVVideoCodec]) async -> Bool {
+        guard order.contains(.av1) else { return false }
+        guard let webInfo = await adaptivePlayerInfoThroughWebSession(videoId: video.id) else {
+            playerLog.notice("[VisionOS/AV1] blocked and no web-session formats — falling back")
+            return false
+        }
+        return await tryAV1UHDPlayback(video: video, info: webInfo)
     }
 
     /// VP9: YouTube's VisionOS HLS stream; attemptURL's HLS policy keeps its VP9 variants

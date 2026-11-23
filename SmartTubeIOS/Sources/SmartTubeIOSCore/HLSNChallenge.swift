@@ -26,3 +26,44 @@ public enum HLSNChallenge {
         URL(string: url.absoluteString.replacingOccurrences(of: "/n/\(unsolved)/", with: "/n/\(solved)/"))
     }
 }
+
+// MARK: - Adaptive stream URLs
+
+extension HLSNChallenge {
+
+    /// The `n` query value of an adaptive (non-HLS) stream URL.
+    public static func queryValue(in url: URL) -> String? {
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "n" }?.value
+    }
+
+    /// `url` with its `n` query value replaced by its entry in `solutions`, or `url` unchanged.
+    public static func solvingQueryValue(in url: URL, with solutions: [String: String]) -> URL {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+            let items = components.queryItems,
+            let unsolved = items.first(where: { $0.name == "n" })?.value,
+            let solved = solutions[unsolved]
+        else { return url }
+        components.queryItems = items.map { $0.name == "n" ? URLQueryItem(name: "n", value: solved) : $0 }
+        return components.url ?? url
+    }
+}
+
+extension PlayerInfo {
+
+    /// The distinct `n` challenges in the formats' adaptive URLs.
+    public var nChallenges: [String] {
+        Array(Set(formats.compactMap { $0.url.flatMap(HLSNChallenge.queryValue(in:)) }))
+    }
+
+    /// A copy whose format URLs carry the solved `n` values.
+    public func solvingNChallenges(_ solutions: [String: String]) -> PlayerInfo {
+        let solvedFormats = formats.map { format in
+            var format = format
+            format.url = format.url.map { HLSNChallenge.solvingQueryValue(in: $0, with: solutions) }
+            return format
+        }
+        return PlayerInfo(
+            video: video, formats: solvedFormats, hlsURL: hlsURL, dashURL: dashURL, captionTracks: captionTracks,
+            trackingURLs: trackingURLs, endCards: endCards)
+    }
+}
