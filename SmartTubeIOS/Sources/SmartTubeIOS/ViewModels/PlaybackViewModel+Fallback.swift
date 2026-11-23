@@ -1614,90 +1614,7 @@ extension PlaybackViewModel {
             playerLog.notice("✅ [\(label)/adaptive] composition built — testing playback for \(video.id)")
             lastAttemptedStreamURL = videoURL
             let compositeItem = AVPlayerItem(asset: composition)
-            compositeItem.audioTimePitchAlgorithm = .spectral
-            // fix11: Fast-start — fire readyToPlay after 0.5 s of buffered content.
-            // Without this, AVMutableComposition items use the system default heuristic
-            // (effectively unconstrained), which adds 0.3–0.5 s to initial buffering.
-            // Reset to system default (0) in a ramp Task so downstream buffering is
-            // not constrained after startup (same pattern as HLS paths).
-            compositeItem.preferredForwardBufferDuration = 0.5
-            Task { [weak compositeItem] in
-                try? await Task.sleep(for: .seconds(5))
-                compositeItem?.preferredForwardBufferDuration = 0
-            }
-            // fix235: Guard cancellation and video identity before touching the player.
-            guard !Task.isCancelled, currentVideo?.id == video.id else {
-                playerLog.notice(
-                    "⚠️ [\(label)/adaptive] fix235: task cancelled or video changed (current=\(currentVideo?.id ?? "nil") expected=\(video.id)) — aborting replaceCurrentItem"
-                )
-                return false
-            }
-            player.replaceCurrentItem(with: compositeItem)
-            itemObserverTask?.cancel()
-
-            for await status in compositeItem.statusStream {
-                switch status {
-                case .readyToPlay:
-                    playerLog.notice(
-                        "[benchmark] readyToPlay — \(label)/adaptive — videoId=\(video.id) title=\(video.title)")
-                    playerLog.notice("✅ [\(label)/adaptive] readyToPlay")
-                    let compDur = compositeItem.duration.seconds
-                    if compDur.isFinite && compDur > 0 {
-                        let prevDur = self.duration
-                        self.duration = compDur
-                        playerLog.notice(
-                            "[duration] updated from composition AVPlayerItem: \(String(format: "%.1f", compDur))s (was \(String(format: "%.1f", prevDur))s from metadata)"
-                        )
-                    } else if self.duration == 0 {
-                        durationObserverTask?.cancel()
-                        durationObserverTask = Task { [weak self, weak compositeItem] in
-                            guard let self, let compositeItem else { return }
-                            for await seconds in compositeItem.firstValidDurationStream {
-                                guard !Task.isCancelled else { return }
-                                let prev = self.duration
-                                self.duration = seconds
-                                playerLog.notice(
-                                    "[duration] deferred KVO update: \(String(format: "%.1f", seconds))s (was \(String(format: "%.1f", prev))s)"
-                                )
-                                break
-                            }
-                        }
-                    }
-                    if let pos = savedPositionToRestore, pos > 0 {
-                        savedPositionToRestore = nil
-                        seek(to: pos)
-                    }
-                    loadAudioTracks(from: compositeItem)
-                    needsQuickStartup = false
-                    isLoading = false
-                    timeToPlayMs = Int(Date().timeIntervalSince(videoLoadStartedAt) * 1000)
-                    if timeToPlayMs > 4_000 {
-                        CrashlyticsLogger.recordSlowVideoLoad(
-                            videoId: video.id,
-                            elapsedMs: timeToPlayMs,
-                            streamType: "\(label)/adaptive",
-                            hasError: false
-                        )
-                    }
-                    player.rate = Float(settings.playbackSpeed)
-                    isPlaying = true
-                    launchPhase2(video: video, info: info)
-                    return true
-                case .failed:
-                    let nsErr = compositeItem.error as? NSError
-                    let httpStatus =
-                        (nsErr?.userInfo[NSUnderlyingErrorKey] as? NSError)?.code == -12660 ? 403 : (nsErr?.code ?? -1)
-                    playerLog.error(
-                        "❌ [\(label)/adaptive] AVPlayerItem failed: domain=\(nsErr?.domain ?? "?") code=\(nsErr?.code ?? -1) httpStatus=\(httpStatus)"
-                    )
-                    return false
-                case .unknown:
-                    continue
-                @unknown default:
-                    continue
-                }
-            }
-            return false
+            return await playPreparedItem(compositeItem, for: video, info: info, label: label)
         } catch {
             let nsErr = error as NSError
             let httpStatus = (nsErr.userInfo[NSUnderlyingErrorKey] as? NSError)?.code == -12660 ? 403 : nsErr.code
@@ -1706,6 +1623,98 @@ extension PlaybackViewModel {
             )
             return false
         }
+    }
+
+    /// Swaps `compositeItem` into the player and runs the shared `.readyToPlay` bookkeeping
+    /// (duration, seek restore, audio tracks, loading state, Phase 2). Extracted from
+    /// `attemptComposition` so the tvOS AV1 DASH→HLS path can reuse it.
+    private func playPreparedItem(
+        _ compositeItem: AVPlayerItem, for video: Video, info: PlayerInfo, label: String
+    ) async -> Bool {
+        compositeItem.audioTimePitchAlgorithm = .spectral
+        // fix11: Fast-start — fire readyToPlay after 0.5 s of buffered content.
+        // Without this, AVMutableComposition items use the system default heuristic
+        // (effectively unconstrained), which adds 0.3–0.5 s to initial buffering.
+        // Reset to system default (0) in a ramp Task so downstream buffering is
+        // not constrained after startup (same pattern as HLS paths).
+        compositeItem.preferredForwardBufferDuration = 0.5
+        Task { [weak compositeItem] in
+            try? await Task.sleep(for: .seconds(5))
+            compositeItem?.preferredForwardBufferDuration = 0
+        }
+        // fix235: Guard cancellation and video identity before touching the player.
+        guard !Task.isCancelled, currentVideo?.id == video.id else {
+            playerLog.notice(
+                "⚠️ [\(label)/adaptive] fix235: task cancelled or video changed (current=\(currentVideo?.id ?? "nil") expected=\(video.id)) — aborting replaceCurrentItem"
+            )
+            return false
+        }
+        player.replaceCurrentItem(with: compositeItem)
+        itemObserverTask?.cancel()
+
+        for await status in compositeItem.statusStream {
+            switch status {
+            case .readyToPlay:
+                playerLog.notice(
+                    "[benchmark] readyToPlay — \(label)/adaptive — videoId=\(video.id) title=\(video.title)")
+                playerLog.notice("✅ [\(label)/adaptive] readyToPlay")
+                let compDur = compositeItem.duration.seconds
+                if compDur.isFinite && compDur > 0 {
+                    let prevDur = self.duration
+                    self.duration = compDur
+                    playerLog.notice(
+                        "[duration] updated from composition AVPlayerItem: \(String(format: "%.1f", compDur))s (was \(String(format: "%.1f", prevDur))s from metadata)"
+                    )
+                } else if self.duration == 0 {
+                    durationObserverTask?.cancel()
+                    durationObserverTask = Task { [weak self, weak compositeItem] in
+                        guard let self, let compositeItem else { return }
+                        for await seconds in compositeItem.firstValidDurationStream {
+                            guard !Task.isCancelled else { return }
+                            let prev = self.duration
+                            self.duration = seconds
+                            playerLog.notice(
+                                "[duration] deferred KVO update: \(String(format: "%.1f", seconds))s (was \(String(format: "%.1f", prev))s)"
+                            )
+                            break
+                        }
+                    }
+                }
+                if let pos = savedPositionToRestore, pos > 0 {
+                    savedPositionToRestore = nil
+                    seek(to: pos)
+                }
+                loadAudioTracks(from: compositeItem)
+                needsQuickStartup = false
+                isLoading = false
+                timeToPlayMs = Int(Date().timeIntervalSince(videoLoadStartedAt) * 1000)
+                if timeToPlayMs > 4_000 {
+                    CrashlyticsLogger.recordSlowVideoLoad(
+                        videoId: video.id,
+                        elapsedMs: timeToPlayMs,
+                        streamType: "\(label)/adaptive",
+                        hasError: false
+                    )
+                }
+                player.rate = Float(settings.playbackSpeed)
+                isPlaying = true
+                launchPhase2(video: video, info: info)
+                return true
+            case .failed:
+                let nsErr = compositeItem.error as? NSError
+                let httpStatus =
+                    (nsErr?.userInfo[NSUnderlyingErrorKey] as? NSError)?.code == -12660 ? 403 : (nsErr?.code ?? -1)
+                playerLog.error(
+                    "❌ [\(label)/adaptive] AVPlayerItem failed: domain=\(nsErr?.domain ?? "?") code=\(nsErr?.code ?? -1) httpStatus=\(httpStatus)"
+                )
+                return false
+            case .unknown:
+                continue
+            @unknown default:
+                continue
+            }
+        }
+        return false
     }
 
     private func launchPhase2(video: Video, info: PlayerInfo, cached: CachedVideoData? = nil) {
