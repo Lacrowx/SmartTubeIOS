@@ -166,6 +166,37 @@ public struct AppSettings: Codable {
     /// decoder issues. Defaults to `false` (all codecs allowed).
     public var preferH264: Bool
 
+    /// tvOS video codec for playback above 1080p. YouTube's HLS streams carry H.264 only up
+    /// to 1080p; higher tiers are VP9 (needs Apple's supplemental VP9 decoder, tvOS 26.2+).
+    /// A choice the device cannot decode falls back to H.264.
+    public enum TVVideoCodec: String, Codable, CaseIterable, Sendable {
+        /// YouTube's HLS stream limited to H.264 (up to 1080p).
+        case h264
+        /// YouTube's HLS stream with SDR VP9 variants (up to 2160p).
+        case vp9
+
+        /// Codecs to try before the regular H.264 path, best first, limited to what the device
+        /// decodes. Empty means the regular path plays (H.264 up to 1080p).
+        public func playbackOrder(vp9Supported: Bool) -> [TVVideoCodec] {
+            let vp9: [TVVideoCodec] = vp9Supported ? [.vp9] : []
+            switch self {
+            case .h264: return []
+            case .vp9: return vp9
+            }
+        }
+
+        /// Settings picker label; names what plays instead when the device can't decode it.
+        public func pickerLabel(vp9Supported: Bool) -> String {
+            let plays = playbackOrder(vp9Supported: vp9Supported).first ?? .h264
+            switch (self, plays) {
+            case (.h264, _): return "H.264 (up to 1080p)"
+            case (.vp9, .vp9): return "VP9 (up to 4K)"
+            case (.vp9, _): return "VP9 (not supported, plays H.264)"
+            }
+        }
+    }
+    public var tvVideoCodec: TVVideoCodec
+
     // MARK: iCloud sync
     /// When `true`, local user data (subscriptions, RSS feeds, video state, queue) is
     /// synced to iCloud via `NSUbiquitousKeyValueStore`. Defaults to `false` (opt-in).
@@ -312,6 +343,7 @@ public struct AppSettings: Codable {
         poTokenServiceURL = nil
         audioOnlyMode = false
         preferH264 = false
+        tvVideoCodec = .vp9
         iCloudSyncEnabled = false
         #if os(macOS)
         useTOSPlayerOnMac = true
@@ -389,6 +421,7 @@ extension AppSettings {
         case poTokenServiceURL
         case audioOnlyMode
         case preferH264
+        case tvVideoCodec
         case iCloudSyncEnabled
         case useTOSPlayerOnMac
     }
@@ -456,6 +489,7 @@ extension AppSettings {
         poTokenServiceURL = c.safeDecode(URL?.self, forKey: .poTokenServiceURL, default: d.poTokenServiceURL)
         audioOnlyMode = c.safeDecode(Bool.self, forKey: .audioOnlyMode, default: d.audioOnlyMode)
         preferH264 = c.safeDecode(Bool.self, forKey: .preferH264, default: d.preferH264)
+        tvVideoCodec = c.safeDecode(TVVideoCodec.self, forKey: .tvVideoCodec, default: d.tvVideoCodec)
         iCloudSyncEnabled = c.safeDecode(Bool.self, forKey: .iCloudSyncEnabled, default: d.iCloudSyncEnabled)
         useTOSPlayerOnMac = c.safeDecode(Bool.self, forKey: .useTOSPlayerOnMac, default: d.useTOSPlayerOnMac)
     }

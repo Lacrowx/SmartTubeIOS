@@ -1,5 +1,6 @@
 @preconcurrency import AVFoundation
 import SmartTubeIOSCore
+import VideoToolbox
 import os
 
 #if canImport(UIKit)
@@ -18,23 +19,25 @@ struct HLSPlaybackPolicy: Equatable, Sendable {
     let userAgent: String
     let maximumHeight: Int?
     let filtersMasterManifest: Bool
-    let requiresH264: Bool
+    /// Video codecs the master manifest is filtered to (substring of `CODECS`); `nil` = no filter.
+    let allowedVideoCodecs: [String]?
 
-    static func resolve(label: String, isHLS: Bool) -> Self {
+    /// - Parameter allowsVP9: keep SDR VP9 (`vp09.00`) variants and drop the 1080p H.264 cap.
+    static func resolve(label: String, isHLS: Bool, allowsVP9: Bool = false) -> Self {
         guard isHLS else {
             return Self(
                 userAgent: "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X)",
                 maximumHeight: nil,
                 filtersMasterManifest: false,
-                requiresH264: false
+                allowedVideoCodecs: nil
             )
         }
         if label.localizedCaseInsensitiveContains("visionos") {
             return Self(
                 userAgent: InnerTubeClients.VisionOS.userAgent,
-                maximumHeight: InnerTubeClients.VisionOS.maximumHLSHeight,
+                maximumHeight: allowsVP9 ? nil : InnerTubeClients.VisionOS.maximumHLSHeight,
                 filtersMasterManifest: true,
-                requiresH264: true
+                allowedVideoCodecs: allowsVP9 ? ["avc1", "vp09.00"] : ["avc1"]
             )
         }
         if label.contains("WebSafari") {
@@ -42,16 +45,33 @@ struct HLSPlaybackPolicy: Equatable, Sendable {
                 userAgent: InnerTubeClients.WebSafari.userAgent,
                 maximumHeight: nil,
                 filtersMasterManifest: false,
-                requiresH264: false
+                allowedVideoCodecs: nil
             )
         }
         return Self(
             userAgent: "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X)",
             maximumHeight: nil,
             filtersMasterManifest: false,
-            requiresH264: false
+            allowedVideoCodecs: nil
         )
     }
+
+    /// tvOS: opts in to Apple's supplemental VP9 decoder (tvOS 26.2+) on first access and
+    /// reports whether VP9 hardware decode is then available. Without the opt-in VideoToolbox
+    /// reports no VP9 decoder; with it, Apple TV 4K plays YouTube's VP9 HLS variants at 2160p
+    /// (measured: 3840×2160, 0 dropped frames). `AVURLAsset.isPlayableExtendedMIMEType` still
+    /// says `false` for `vp09` afterwards, so it is not used as a gate. Always `false` on other
+    /// platforms, which keep their existing stream selection.
+    @MainActor static let vp9DecoderAvailable: Bool = {
+        #if os(tvOS)
+        if #available(tvOS 26.2, *) {
+            VTRegisterSupplementalVideoDecoderIfAvailable(kCMVideoCodecType_VP9)
+        }
+        return VTIsHardwareDecodeSupported(kCMVideoCodecType_VP9)
+        #else
+        return false
+        #endif
+    }()
 
     func cappedHeight(requested: Int?) -> Int? {
         guard let maximumHeight else { return requested }
@@ -60,7 +80,7 @@ struct HLSPlaybackPolicy: Equatable, Sendable {
 
     func allowsFormat(height: Int, mimeType: String) -> Bool {
         if let maximumHeight, height > maximumHeight { return false }
-        if requiresH264, !mimeType.contains("avc1") { return false }
+        if let allowedVideoCodecs, !allowedVideoCodecs.contains(where: { mimeType.contains($0) }) { return false }
         return true
     }
 }
@@ -1039,7 +1059,10 @@ extension PlaybackViewModel {
 
         playerInfo = info
         let isHLSManifest = label.contains("/HLS")
-        let hlsPolicy = HLSPlaybackPolicy.resolve(label: label, isHLS: isHLSManifest)
+        let hlsPolicy = HLSPlaybackPolicy.resolve(
+            label: label, isHLS: isHLSManifest,
+            allowsVP9: settings.tvVideoCodec != .h264 && HLSPlaybackPolicy.vp9DecoderAvailable
+        )
         let newFormats = Self.deduplicatedVideoFormats(info.formats)
         // Never reduce quality options for adaptive/HLS streams — preserve the richest set seen.
         // Exception: muxed fallback (label contains "/muxed") always resets availableFormats to
@@ -1094,7 +1117,7 @@ extension PlaybackViewModel {
                 } ?? allVariantURLs
             playerLog.notice(
                 "[\(label)] HLS: hlsURL=yes variantCount=\(variantURLs.count) effectiveQuality=\(effectiveQuality)")
-            if hlsPolicy.requiresH264 {
+            if hlsPolicy.allowedVideoCodecs != nil {
                 availableFormats = availableFormats.filter { format in
                     hlsPolicy.allowsFormat(height: format.height, mimeType: format.mimeType)
                 }
@@ -1119,7 +1142,8 @@ extension PlaybackViewModel {
                     if hlsPolicy.filtersMasterManifest {
                         effectiveURL = hlsURL
                         playerLog.notice(
-                            "[\(label)] HLS: using H.264-filtered master with \(chosen.key)p cap and audio renditions")
+                            "[\(label)] HLS: using master filtered to \(hlsPolicy.allowedVideoCodecs ?? []) with \(chosen.key)p cap and audio renditions"
+                        )
                     } else {
                         effectiveURL = chosen.value
                         playerLog.notice("[\(label)] HLS: selected variant \(chosen.key)p")
@@ -1225,7 +1249,7 @@ extension PlaybackViewModel {
             qualityManager.configureHLSPlayback(
                 userAgent: hlsPolicy.userAgent,
                 maximumHeight: hlsPolicy.maximumHeight,
-                requiredVideoCodec: hlsPolicy.requiresH264 ? "avc1" : nil
+                allowedVideoCodecs: hlsPolicy.allowedVideoCodecs
             )
             qualityManager.setSelectedFormatForCurrentPreference()
             applyHLSHints = true

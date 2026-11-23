@@ -223,6 +223,17 @@ public struct SettingsView: View {
             Toggle("Prefer H.264 Codec", isOn: $store.settings.preferH264)
                 .accessibilityIdentifier("settings.preferH264Toggle")
             #endif
+            #if os(tvOS)
+            Picker("Video Codec", selection: $store.settings.tvVideoCodec) {
+                ForEach(AppSettings.TVVideoCodec.allCases, id: \.self) { codec in
+                    Text(
+                        codec.pickerLabel(
+                            vp9Supported: HLSPlaybackPolicy.vp9DecoderAvailable)
+                    )
+                    .tag(codec)
+                }
+            }
+            #endif
         }
     }
 

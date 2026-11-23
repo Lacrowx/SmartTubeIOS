@@ -781,6 +781,10 @@ extension PlaybackViewModel {
                     }
                 }
             }
+            #if os(tvOS)
+            // Settings → video codec (VP9): try before the regular path, which caps at 1080p H.264.
+            if await tryTVPreferredCodecPlayback(video: video) { return }
+            #endif
             // Build player item — preferredStreamURL is guaranteed non-nil here because
             // parsePlayerInfo throws APIError.unavailable when streamingData is absent.
             guard let masterStreamURL = info.preferredStreamURL else {

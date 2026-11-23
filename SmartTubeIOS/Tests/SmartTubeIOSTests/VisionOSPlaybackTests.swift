@@ -38,7 +38,36 @@ struct VisionOSPlaybackTests {
         let policy = HLSPlaybackPolicy.resolve(label: "VisionOS/HLS", isHLS: true)
         #expect(policy.userAgent == InnerTubeClients.VisionOS.userAgent)
         #expect(policy.filtersMasterManifest)
-        #expect(policy.requiresH264)
+        #expect(policy.allowedVideoCodecs == ["avc1"])
+    }
+
+    @Test("VisionOS with VP9 keeps H.264 + SDR VP9 and drops the 1080p cap")
+    func visionOSVP9Policy() {
+        let policy = HLSPlaybackPolicy.resolve(label: "VisionOS/HLS", isHLS: true, allowsVP9: true)
+        #expect(policy.filtersMasterManifest)
+        #expect(policy.allowedVideoCodecs == ["avc1", "vp09.00"])
+        #expect(policy.maximumHeight == nil)
+        #expect(policy.cappedHeight(requested: nil) == nil)
+        #expect(policy.cappedHeight(requested: 2160) == 2160)
+    }
+
+    @Test("VP9 filter keeps SDR VP9 UHD and drops HDR VP9.2")
+    func filtersMultivariantWithVP9() {
+        let manifest = """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="234",NAME="English - original",DEFAULT=NO,AUTOSELECT=YES,URI="audio.m3u8"
+            #EXT-X-STREAM-INF:BANDWIDTH=6000000,RESOLUTION=1920x1080,CODECS="avc1.64002A,mp4a.40.2",AUDIO="234"
+            h264-1080.m3u8
+            #EXT-X-STREAM-INF:BANDWIDTH=18000000,RESOLUTION=3840x2160,CODECS="vp09.00.51.08,mp4a.40.2",AUDIO="234"
+            vp9-2160.m3u8
+            #EXT-X-STREAM-INF:BANDWIDTH=20000000,RESOLUTION=3840x2160,CODECS="vp09.02.51.10.01.09.16.09.00,mp4a.40.2",AUDIO="234"
+            vp9hdr-2160.m3u8
+            """
+        let filtered = filterHLSMasterManifest(manifest, maximumHeight: nil, allowedVideoCodecs: ["avc1", "vp09.00"])
+        #expect(filtered.contains("DEFAULT=YES"))
+        #expect(filtered.contains("h264-1080.m3u8"))
+        #expect(filtered.contains("vp9-2160.m3u8"))
+        #expect(!filtered.contains("vp9hdr-2160.m3u8"))
     }
 
     @Test("VisionOS caps Auto and explicit UHD requests at 1080p")
@@ -89,7 +118,7 @@ struct VisionOSPlaybackTests {
             """
 
         let filtered = filterHLSMasterManifest(
-            manifest, maximumHeight: 1080, requiredVideoCodec: "avc1"
+            manifest, maximumHeight: 1080, allowedVideoCodecs: ["avc1"]
         )
         #expect(filtered.contains("TYPE=AUDIO"))
         #expect(filtered.contains("DEFAULT=YES"))

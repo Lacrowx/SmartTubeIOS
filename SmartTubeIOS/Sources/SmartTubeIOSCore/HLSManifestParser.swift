@@ -237,10 +237,12 @@ public func parseHLSBestVariant(from manifest: String, baseURL: URL, minHeight: 
 /// YouTube's VisionOS master mixes H.264 and VP9 variants; tvOS may select an unsupported
 /// VP9 entry even when resolution hints are set. Filtering the master (rather than loading
 /// a video-only variant) keeps `EXT-X-MEDIA` audio groups and removes incompatible video.
+/// A variant is kept when its line contains any of `allowedVideoCodecs` (case-insensitive,
+/// e.g. `"avc1"`, `"vp09.00"`) and, when `maximumHeight` is set, it is no taller.
 public func filterHLSMasterManifest(
     _ manifest: String,
-    maximumHeight: Int,
-    requiredVideoCodec: String
+    maximumHeight: Int?,
+    allowedVideoCodecs: [String]
 ) -> String {
     let lines = manifest.components(separatedBy: .newlines)
     var output: [String] = []
@@ -269,8 +271,8 @@ public func filterHLSMasterManifest(
                 .map { String(trimmed[$0]) }
                 .flatMap { $0.components(separatedBy: "x").last }
                 .flatMap(Int.init)
-            let codecMatches = trimmed.localizedCaseInsensitiveContains(requiredVideoCodec)
-            guard codecMatches, let height, height <= maximumHeight else {
+            let codecMatches = allowedVideoCodecs.contains { trimmed.localizedCaseInsensitiveContains($0) }
+            guard codecMatches, let height, height <= (maximumHeight ?? .max) else {
                 shouldDropNextURI = true
                 continue
             }
