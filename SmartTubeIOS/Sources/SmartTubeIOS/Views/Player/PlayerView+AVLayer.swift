@@ -1,5 +1,6 @@
 import AVFoundation
 import AVKit
+import SmartTubeIOSCore
 import SwiftUI
 
 #if canImport(UIKit)
@@ -9,6 +10,7 @@ import UIKit
 import AppKit
 #endif
 #if os(tvOS)
+import CoreMedia
 import os
 
 private let displayLog = Logger(subsystem: "com.void.smarttube.app", category: "Player")
@@ -141,17 +143,20 @@ struct PlayerAVLayerView: UIViewRepresentable {
 // MARK: - PlayerDisplayMatcher (tvOS)
 
 #if os(tvOS)
-/// Match Content for the tvOS player. AVPlayerViewController asks tvOS for the display mode
-/// of what it plays (`appliesPreferredDisplayCriteriaAutomatically`); the bare AVPlayerLayer
-/// used here does not, so with "Match Dynamic Range" / "Match Frame Rate" on the TV stayed in
-/// its default mode. The current item's preferred criteria (from the master playlist's
-/// VIDEO-RANGE and FRAME-RATE) go to the window's display manager.
+/// Match Content for the tvOS app. AVPlayerViewController asks tvOS for the display mode of
+/// what it plays (`appliesPreferredDisplayCriteriaAutomatically`); the bare AVPlayerLayer used
+/// here does not, so this does it for the window, following Settings → Display Mode
+/// (`AppSettings.TVDisplayMode`):
+/// - Match each video: the item's own preferred criteria (VIDEO-RANGE, FRAME-RATE); none in
+///   menus, so the TV returns to its default.
+/// - HDR10 modes: HDR10 in menus and for HDR videos, SDR or HDR10 for SDR videos, at the
+///   video's frame rate (the screen's current rate in menus).
 ///
 /// One owner for all player views: SwiftUI rebuilds the player's layer view whenever the
 /// player's focusability changes (opening the More menu or another overlay). When each view
 /// owned the criteria, the outgoing view cleared what the incoming one had just set, and the
-/// TV switched to its default mode and back. Here criteria change only with the item, and are
-/// cleared only after no player view has been left for `releaseGrace`.
+/// TV switched modes and back. Here the request changes only with the item or the setting,
+/// and the player counts as closed only after no player view has been left for `releaseGrace`.
 @MainActor
 final class PlayerDisplayMatcher {
     static let shared = PlayerDisplayMatcher()
@@ -159,37 +164,42 @@ final class PlayerDisplayMatcher {
     /// Covers a view being torn down before its replacement attaches (~10 ms on an Apple TV).
     private static let releaseGrace: Duration = .milliseconds(750)
 
+    private var mode: AppSettings.TVDisplayMode = .matchVideo
     private var activeViews = Set<ObjectIdentifier>()
-    private weak var window: UIWindow?
-    private var assetID: ObjectIdentifier?
-    private var loadTask: Task<Void, Never>?
+    private weak var playerWindow: UIWindow?
+    /// The item the player views show; `nil` while no video plays.
+    private var asset: AVAsset?
+    /// Last request sent, so an identical one is not sent again (even the same criteria can
+    /// trigger a mode switch).
+    private var appliedKey: String?
+    private var applyTask: Task<Void, Never>?
     private var releaseTask: Task<Void, Never>?
+
+    /// Settings → Display Mode changed (or the app started).
+    func setMode(_ newMode: AppSettings.TVDisplayMode) {
+        guard newMode != mode else { return }
+        mode = newMode
+        apply()
+    }
+
+    /// The app is in the foreground again; tvOS restored its own mode while it was away.
+    func sceneBecameActive() {
+        appliedKey = nil
+        apply()
+    }
 
     /// A player view in `window` shows `asset` (`nil`: no item).
     func show(_ asset: AVAsset?, in window: UIWindow, from view: ObjectIdentifier) {
         activeViews.insert(view)
         releaseTask?.cancel()
         releaseTask = nil
-        guard let asset else {
-            clear(reason: "no item")
-            return
-        }
-        let id = ObjectIdentifier(asset)
-        // Requested already: setting the same criteria again can still trigger a mode switch.
-        if self.window === window, assetID == id { return }
-        self.window = window
-        assetID = id
-        loadTask?.cancel()
-        loadTask = Task { [weak self] in
-            let criteria = try? await asset.load(.preferredDisplayCriteria)
-            guard !Task.isCancelled, let window = self?.window else { return }
-            window.avDisplayManager.preferredDisplayCriteria = criteria
-            displayLog.notice("[display] preferred criteria: \(String(describing: criteria))")
-        }
+        playerWindow = window
+        guard asset !== self.asset else { return }
+        self.asset = asset
+        apply()
     }
 
-    /// A player view was dismantled. Once none is left, hand the display back to the
-    /// user's default mode.
+    /// A player view was dismantled. Once none is left, the player is closed.
     func release(_ view: ObjectIdentifier) {
         activeViews.remove(view)
         guard activeViews.isEmpty else { return }
@@ -197,17 +207,82 @@ final class PlayerDisplayMatcher {
         releaseTask = Task { [weak self] in
             try? await Task.sleep(for: Self.releaseGrace)
             guard !Task.isCancelled, let self, self.activeViews.isEmpty else { return }
-            self.clear(reason: "player closed")
+            self.asset = nil
+            self.apply()
         }
     }
 
-    private func clear(reason: String) {
-        loadTask?.cancel()
-        guard let window else { return }
-        window.avDisplayManager.preferredDisplayCriteria = nil
-        self.window = nil
-        assetID = nil
-        displayLog.notice("[display] cleared criteria (\(reason))")
+    private func apply() {
+        let asset = asset
+        let mode = mode
+        applyTask?.cancel()
+        applyTask = Task { [weak self] in
+            let info: (isHDR: Bool, frameRate: Float?)?
+            if let asset { info = await Self.videoInfo(of: asset) } else { info = nil }
+            guard !Task.isCancelled, let self,
+                let window = self.playerWindow ?? Self.appWindow()
+            else { return }
+            let criteria: AVDisplayCriteria?
+            let key: String
+            switch mode.request(videoIsHDR: info?.isHDR) {
+            case .systemDefault:
+                criteria = nil
+                key = "default"
+            case .videoOwn:
+                guard let asset else { return }
+                criteria = try? await asset.load(.preferredDisplayCriteria)
+                key = "video \(ObjectIdentifier(asset))"
+            case .sdr:
+                let rate = info?.frameRate ?? Float(window.screen.maximumFramesPerSecond)
+                criteria = Self.criteria(hdr: false, refreshRate: rate)
+                key = "SDR @\(rate)"
+            case .hdr10:
+                let rate = info?.frameRate ?? Float(window.screen.maximumFramesPerSecond)
+                criteria = Self.criteria(hdr: true, refreshRate: rate)
+                key = "HDR10 @\(rate)"
+            }
+            guard !Task.isCancelled, key != self.appliedKey else { return }
+            window.avDisplayManager.preferredDisplayCriteria = criteria
+            self.appliedKey = key
+            displayLog.notice("[display] mode=\(mode.rawValue) request=\(key)")
+        }
+    }
+
+    /// Dynamic range and frame rate from the item's HLS variants (VIDEO-RANGE, FRAME-RATE).
+    /// HDR if any variant is PQ or HLG.
+    private static func videoInfo(of asset: AVAsset) async -> (isHDR: Bool, frameRate: Float?) {
+        guard let urlAsset = asset as? AVURLAsset,
+            let variants = try? await urlAsset.load(.variants)
+        else { return (false, nil) }
+        let video = variants.compactMap(\.videoAttributes)
+        let isHDR = video.contains { $0.videoRange == .pq || $0.videoRange == .hlg }
+        return (isHDR, video.compactMap(\.nominalFrameRate).max().map(Float.init))
+    }
+
+    /// HDR10 (PQ, BT.2020) or SDR (BT.709) display criteria at `refreshRate`.
+    private static func criteria(hdr: Bool, refreshRate: Float) -> AVDisplayCriteria? {
+        let extensions: [CFString: CFString] =
+            hdr
+            ? [
+                kCMFormatDescriptionExtension_TransferFunction: kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ,
+                kCMFormatDescriptionExtension_ColorPrimaries: kCMFormatDescriptionColorPrimaries_ITU_R_2020,
+                kCMFormatDescriptionExtension_YCbCrMatrix: kCMFormatDescriptionYCbCrMatrix_ITU_R_2020,
+            ]
+            : [
+                kCMFormatDescriptionExtension_TransferFunction: kCMFormatDescriptionTransferFunction_ITU_R_709_2,
+                kCMFormatDescriptionExtension_ColorPrimaries: kCMFormatDescriptionColorPrimaries_ITU_R_709_2,
+                kCMFormatDescriptionExtension_YCbCrMatrix: kCMFormatDescriptionYCbCrMatrix_ITU_R_709_2,
+            ]
+        var description: CMFormatDescription?
+        let status = CMVideoFormatDescriptionCreate(
+            allocator: kCFAllocatorDefault, codecType: kCMVideoCodecType_HEVC, width: 3840, height: 2160,
+            extensions: extensions as CFDictionary, formatDescriptionOut: &description)
+        guard status == noErr, let description else { return nil }
+        return AVDisplayCriteria(refreshRate: refreshRate, formatDescription: description)
+    }
+
+    private static func appWindow() -> UIWindow? {
+        UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
     }
 }
 #endif

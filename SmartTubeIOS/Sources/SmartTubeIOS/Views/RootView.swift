@@ -21,6 +21,9 @@ public struct RootView: View {
     #endif
     @State private var cardDownloadAlertItem: DownloadAlertItem?
     @State private var isLandscapeLayout = false
+    #if os(tvOS)
+    @Environment(\.scenePhase) private var scenePhase
+    #endif
 
     public init() {}
 
@@ -46,6 +49,15 @@ public struct RootView: View {
         .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { isLandscapeLayout = $0 }
         .tint(store.settings.accentColor.color)
         .preferredColorScheme(store.settings.themeName.colorScheme)
+        #if os(tvOS)
+        // Settings → Display Mode: the TV mode the app asks for, in menus and while playing.
+        .onChange(of: store.settings.tvDisplayMode, initial: true) { _, mode in
+            PlayerDisplayMatcher.shared.setMode(mode)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { PlayerDisplayMatcher.shared.sceneBecameActive() }
+        }
+        #endif
         #if !os(tvOS) && ENABLE_DOWNLOADS
         .onChange(of: cardDownloadService.state) { _, newState in
             switch newState {

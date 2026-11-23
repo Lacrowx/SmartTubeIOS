@@ -204,6 +204,48 @@ public struct AppSettings: Codable {
     }
     public var tvVideoCodec: TVVideoCodec
 
+    /// tvOS display mode: which dynamic range the app asks the TV for (takes effect with the
+    /// Apple TV's Match Content settings on). YouTube serves HDR as HDR10/HLG, never Dolby
+    /// Vision, so keeping the app in HDR10 avoids switching the TV out of and back into a
+    /// Dolby Vision default around every HDR video.
+    public enum TVDisplayMode: String, Codable, CaseIterable, Sendable {
+        /// Each video's own mode; menus use the Apple TV's default.
+        case matchVideo
+        /// HDR10 for menus and HDR videos; SDR videos switch to SDR.
+        case hdr10SDRVideosInSDR
+        /// HDR10 throughout, SDR videos included.
+        case hdr10Always
+
+        /// What to ask tvOS for.
+        public enum Request: Equatable, Sendable {
+            /// No request: the Apple TV's default mode.
+            case systemDefault
+            /// The playing video's own preferred mode (range and frame rate).
+            case videoOwn
+            /// SDR, or HDR10, at the video's frame rate (the current one while browsing).
+            case sdr, hdr10
+        }
+
+        /// - Parameter videoIsHDR: whether the playing video is HDR; `nil` while no video plays.
+        public func request(videoIsHDR: Bool?) -> Request {
+            switch (self, videoIsHDR) {
+            case (.matchVideo, nil): return .systemDefault
+            case (.matchVideo, _): return .videoOwn
+            case (.hdr10SDRVideosInSDR, false?): return .sdr
+            case (.hdr10SDRVideosInSDR, _), (.hdr10Always, _): return .hdr10
+            }
+        }
+
+        public var pickerLabel: String {
+            switch self {
+            case .matchVideo: return "Match each video"
+            case .hdr10SDRVideosInSDR: return "HDR10 (SDR videos in SDR)"
+            case .hdr10Always: return "Always HDR10"
+            }
+        }
+    }
+    public var tvDisplayMode: TVDisplayMode
+
     /// Whether adaptive-format selection prefers H.264. On tvOS the Video Codec picker
     /// replaces the "Prefer H.264 Codec" toggle, so choosing H.264 there is the preference.
     public var prefersH264Formats: Bool {
@@ -361,6 +403,7 @@ public struct AppSettings: Codable {
         audioOnlyMode = false
         preferH264 = false
         tvVideoCodec = .vp9
+        tvDisplayMode = .matchVideo
         iCloudSyncEnabled = false
         #if os(macOS)
         useTOSPlayerOnMac = true
@@ -439,6 +482,7 @@ extension AppSettings {
         case audioOnlyMode
         case preferH264
         case tvVideoCodec
+        case tvDisplayMode
         case iCloudSyncEnabled
         case useTOSPlayerOnMac
     }
@@ -509,6 +553,7 @@ extension AppSettings {
         // Settings saved before the Video Codec picker existed: "Prefer H.264 Codec" on means H.264.
         tvVideoCodec = c.safeDecode(
             TVVideoCodec.self, forKey: .tvVideoCodec, default: preferH264 ? .h264 : d.tvVideoCodec)
+        tvDisplayMode = c.safeDecode(TVDisplayMode.self, forKey: .tvDisplayMode, default: d.tvDisplayMode)
         iCloudSyncEnabled = c.safeDecode(Bool.self, forKey: .iCloudSyncEnabled, default: d.iCloudSyncEnabled)
         useTOSPlayerOnMac = c.safeDecode(Bool.self, forKey: .useTOSPlayerOnMac, default: d.useTOSPlayerOnMac)
     }

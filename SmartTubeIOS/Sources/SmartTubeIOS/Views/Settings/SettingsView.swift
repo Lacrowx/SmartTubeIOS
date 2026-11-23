@@ -234,6 +234,11 @@ public struct SettingsView: View {
                     .tag(codec)
                 }
             }
+            Picker("Display Mode", selection: $store.settings.tvDisplayMode) {
+                ForEach(AppSettings.TVDisplayMode.allCases, id: \.self) { mode in
+                    Text(mode.pickerLabel).tag(mode)
+                }
+            }
             #endif
         }
     }
