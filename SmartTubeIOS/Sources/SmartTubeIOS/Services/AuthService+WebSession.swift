@@ -47,22 +47,36 @@ extension AuthService {
     /// cookie-authenticated requests, for the WEB (Safari), MWEB and TVHTML5 clients.
     /// Logs playability and whether YouTube treated the request as signed in.
     func debugProbeWebSession(videoId: String = "cc5C8hRblBY") async {
-        typealias C = InnerTubeClients
-        let clients: [(name: String, id: String, version: String, ua: String)] = [
-            (C.WebSafari.name, C.WebSafari.nameID, C.WebSafari.version, C.WebSafari.userAgent),
-            (C.MWEB.name, C.MWEB.nameID, C.MWEB.version, C.MWEB.userAgent),
-            (C.TV.name, C.TV.nameID, C.TV.version, C.TV.userAgent),
+        typealias Clients = InnerTubeClients
+        let clients = [
+            DebugProbeClient(
+                name: Clients.WebSafari.name, id: Clients.WebSafari.nameID, version: Clients.WebSafari.version,
+                ua: Clients.WebSafari.userAgent),
+            DebugProbeClient(
+                name: Clients.MWEB.name, id: Clients.MWEB.nameID, version: Clients.MWEB.version,
+                ua: Clients.MWEB.userAgent),
+            DebugProbeClient(
+                name: Clients.TV.name, id: Clients.TV.nameID, version: Clients.TV.version, ua: Clients.TV.userAgent),
         ]
+        let player: YouTubePlayerScript
+        do {
+            player = try await YouTubePlayerScript.fetchCurrent()
+        } catch {
+            authLog.notice("[web-session] probe: player script failed \(String(describing: error))")
+            return
+        }
         var visitorData: String?
         for client in clients {
-            let (result, vd) = await debugProbe(videoId: videoId, client: client, visitorData: visitorData)
+            let (result, vd) = await debugProbe(
+                videoId: videoId, client: client, visitorData: visitorData, player: player)
             visitorData = visitorData ?? vd
             authLog.notice("[web-session] probe \(client.name): \(result)")
         }
     }
 
     private func debugProbe(
-        videoId: String, client: (name: String, id: String, version: String, ua: String), visitorData: String?
+        videoId: String, client: DebugProbeClient, visitorData: String?,
+        player: YouTubePlayerScript
     ) async -> (String, String?) {
         guard let url = URL(string: "https://www.youtube.com/youtubei/v1/player?prettyPrint=false") else {
             return ("bad URL", nil)
@@ -102,7 +116,7 @@ extension AuthService {
             "context": ["client": clientFields],
             "videoId": videoId,
             "playbackContext": [
-                "contentPlaybackContext": ["html5Preference": "HTML5_PREF_WANTS", "signatureTimestamp": 20775]
+                "contentPlaybackContext": ["html5Preference": "HTML5_PREF_WANTS", "signatureTimestamp": player.signatureTimestamp]
             ],
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
@@ -115,7 +129,7 @@ extension AuthService {
             let streaming = json["streamingData"] as? [String: Any]
             var hlsCheck = ""
             if let hls = (streaming?["hlsManifestUrl"] as? String).flatMap(URL.init(string:)) {
-                hlsCheck = await debugProbeHLS(hls, userAgent: client.ua)
+                hlsCheck = await debugProbeHLS(hls, userAgent: client.ua, player: player)
             }
             let formats = (streaming?["adaptiveFormats"] as? [[String: Any]]) ?? []
             let ciphered = formats.filter { $0["signatureCipher"] != nil }.count
@@ -131,47 +145,75 @@ extension AuthService {
         }
     }
 
-    /// Fetches the HLS master, its last (highest) variant playlist and that playlist's first
-    /// segment, the way AVPlayer would (no cookies), and reports each HTTP status.
-    private func debugProbeHLS(_ master: URL, userAgent: String) async -> String {
+    /// Fetches the HLS master and its highest variant playlist, then the first and last
+    /// segment as-is and with `n` solved by `NChallengeSolver`, and reports each HTTP status.
+    private func debugProbeHLS(_ manifest: URL, userAgent: String, player: YouTubePlayerScript) async -> String {
         let session = URLSession(configuration: .ephemeral)
         func get(_ url: URL, range: Bool = false) async -> (Int, String) {
             var request = URLRequest(url: url)
             request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
             if range { request.setValue("bytes=0-1023", forHTTPHeaderField: "Range") }
             guard let (data, response) = try? await session.data(for: request) else { return (0, "") }
-            return ((response as? HTTPURLResponse)?.statusCode ?? 0, String(decoding: data, as: UTF8.self))
+            return ((response as? HTTPURLResponse)?.statusCode ?? 0, String(bytes: data, encoding: .utf8) ?? "")
         }
-        func lastURL(in playlist: String) -> URL? {
-            playlist.split(separator: "\n").last { $0.hasPrefix("http") }.flatMap { URL(string: String($0)) }
+        func urls(in playlist: String) -> [URL] {
+            playlist.split(separator: "\n").filter { $0.hasPrefix("http") }.compactMap { URL(string: String($0)) }
         }
-        let (masterCode, masterBody) = await get(master)
-        guard let variant = lastURL(in: masterBody) else { return "master=\(masterCode) variant=none" }
+        func nValue(_ url: URL) -> String? {
+            let parts = url.path.split(separator: "/")
+            guard let index = parts.firstIndex(of: "n"), index + 1 < parts.count else { return nil }
+            return String(parts[index + 1])
+        }
+        let (manifestCode, manifestBody) = await get(manifest)
+        guard let variant = urls(in: manifestBody).last else { return "manifest=\(manifestCode) variant=none" }
         let (variantCode, variantBody) = await get(variant)
-        guard let segment = lastURL(in: variantBody) else {
-            return "master=\(masterCode) variant=\(variantCode) segment=none"
+        let segments = urls(in: variantBody)
+        guard let first = segments.first, let last = segments.last else {
+            return "manifest=\(manifestCode) variant=\(variantCode) segments=0"
         }
-        let (segmentCode, _) = await get(segment, range: true)
-        var result =
-            "master=\(masterCode) variant=\(variantCode) segment=\(segmentCode) "
-            + "segmentHasN=\(segment.path.contains("/n/")) segmentHasPot=\(segment.path.contains("/pot/")) "
-            + "rqh1=\(segment.path.contains("/rqh/1")) variantRqh1=\(variant.path.contains("/rqh/1")) "
-        var plain = URLRequest(url: segment)
-        plain.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-        let noRange = (try? await session.data(for: plain)).flatMap { ($0.1 as? HTTPURLResponse)?.statusCode } ?? 0
-        let withCookies = (try? await URLSession.shared.data(for: plain)).flatMap {
-            ($0.1 as? HTTPURLResponse)?.statusCode
-        } ?? 0
-        result += "noRange=\(noRange) withCookies=\(withCookies)"
-        #if targetEnvironment(simulator)
-        let descrambled = await YouTubeNDescrambler.shared.descrambleURL(segment)
-        if descrambled != segment {
-            let (code, _) = await get(descrambled, range: true)
-            result += " descrambledSegment=\(code)"
+        var result = "manifest=\(manifestCode) variant=\(variantCode) segments=\(segments.count) player=\(player.version)"
+        let challenges = Array(Set([first, last].compactMap(nValue)))
+        let solutions: [String: String]
+        do {
+            let start = Date()
+            solutions = try await NChallengeSolver.shared.solve(challenges, player: player)
+            result += " solveMs=\(Int(Date().timeIntervalSince(start) * 1000))"
+        } catch {
+            return result + " solveError=\(String(describing: error))"
         }
-        #endif
+        for (label, segment) in [("first", first), ("last", last)] {
+            let (raw, _) = await get(segment, range: true)
+            result += " \(label)Raw=\(raw)"
+            guard let challenge = nValue(segment), let solved = solutions[challenge],
+                let fixed = URL(string: segment.absoluteString.replacingOccurrences(of: "/n/\(challenge)/", with: "/n/\(solved)/"))
+            else {
+                result += " \(label)Solved=none"
+                continue
+            }
+            let (code, _) = await get(fixed, range: true)
+            result += " \(label)Solved=\(code) changed=\(fixed != segment) nLen=\(challenge.count)->\(solved.count)"
+            if label == "first" {
+                var timeline: [String] = []
+                for attempt in 1...5 {
+                    try? await Task.sleep(for: .milliseconds(1500))
+                    let (retry, _) = await get(fixed, range: true)
+                    timeline.append("\(attempt * 1500)ms:\(retry)")
+                }
+                result += " retries=[\(timeline.joined(separator: ","))]"
+            }
+        }
         return result
     }
     #endif
 }
+
+#if DEBUG
+/// A client profile for the spike probe.
+private struct DebugProbeClient {
+    let name: String
+    let id: String
+    let version: String
+    let ua: String
+}
+#endif
 #endif
