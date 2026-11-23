@@ -78,10 +78,11 @@ extension PlaybackViewModel {
         return false
     }
 
-    /// Bot check: the VisionOS request is refused, but the web session's MWEB formats carry
-    /// the same AV1 ladder.
+    /// Bot check: the VisionOS request is refused, so there is no VP9 HLS stream, but the web
+    /// session's MWEB formats carry the AV1 ladder. Used for the VP9 setting too when the device
+    /// decodes AV1 (MWEB's VP9 files are WebM, which DASHToHLS doesn't read).
     private func tryUHDThroughWebSession(video: Video, order: [AppSettings.TVVideoCodec]) async -> Bool {
-        guard order.contains(.av1) else { return false }
+        guard !order.isEmpty, HLSPlaybackPolicy.av1DecoderAvailable else { return false }
         guard let webInfo = await adaptivePlayerInfoThroughWebSession(videoId: video.id) else {
             playerLog.notice("[VisionOS/AV1] blocked and no web-session formats — falling back")
             return false
