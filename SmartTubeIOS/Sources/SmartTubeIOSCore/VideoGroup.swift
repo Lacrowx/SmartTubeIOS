@@ -209,7 +209,13 @@ public struct VideoFormat: Identifiable, Hashable, Sendable {
         self.bitrate = bitrate
     }
 
-    public var qualityLabel: String { "\(height)p\(fps > 30 ? "\(fps)" : "")" }
+    /// Quality tier from YouTube's own label (`"2160p60"` → 2160), falling back to the pixel
+    /// height. Videos that are not 16:9 differ: 3840×1920 is height 1920 but YouTube's 2160p.
+    public var nominalHeight: Int {
+        Int(label.prefix(while: \.isNumber)).flatMap { $0 > 0 ? $0 : nil } ?? height
+    }
+
+    public var qualityLabel: String { "\(nominalHeight)p\(fps > 30 ? "\(fps)" : "")" }
 
     /// Short human-readable codec identifier derived from `mimeType`, e.g. "H.264", "VP9", "AV1".
     public var codecShortLabel: String {

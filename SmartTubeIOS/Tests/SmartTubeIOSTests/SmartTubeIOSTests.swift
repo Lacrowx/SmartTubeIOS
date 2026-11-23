@@ -122,6 +122,23 @@ struct SponsorSegmentTests {
 @Suite("Video Format")
 struct VideoFormatTests {
 
+    @Test("a 2:1 video is labelled and selected by YouTube's tier, not its pixel height")
+    func nonSixteenByNineUsesYouTubeTier() {
+        // MKBHD-style 2:1 video: the 2160p tier is 3840×1920.
+        let uhd = VideoFormat(
+            label: "2160p60", width: 3840, height: 1920, fps: 60, mimeType: #"video/webm; codecs="vp9""#)
+        #expect(uhd.nominalHeight == 2160)
+        #expect(uhd.qualityLabel == "2160p60")
+        #expect(AppSettings.VideoQuality.from(height: uhd.nominalHeight) == .q2160)
+    }
+
+    @Test("without a numeric YouTube label the pixel height is used")
+    func nominalHeightFallsBackToHeight() {
+        let format = VideoFormat(label: "hd1080", width: 1920, height: 1080, fps: 30, mimeType: "video/mp4")
+        #expect(format.nominalHeight == 1080)
+        #expect(format.qualityLabel == "1080p")
+    }
+
     @Test func qualityLabel30fps() {
         let f = VideoFormat(label: "720p", width: 1280, height: 720, fps: 30, mimeType: "video/mp4")
         #expect(f.qualityLabel == "720p")

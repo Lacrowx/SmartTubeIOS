@@ -178,8 +178,8 @@ final class PlaybackQualityManager {
         pendingQualityLabel = format?.qualityLabel ?? ""
         let quality: AppSettings.VideoQuality
         if let fmt = format {
-            if let q = AppSettings.VideoQuality.from(height: fmt.height) {
-                quality = q
+            if let matched = AppSettings.VideoQuality.from(height: fmt.nominalHeight) {
+                quality = matched
             } else {
                 playerLog.error(
                     "selectFormat: non-standard height \(fmt.height)p — no matching VideoQuality; falling back to .auto"
