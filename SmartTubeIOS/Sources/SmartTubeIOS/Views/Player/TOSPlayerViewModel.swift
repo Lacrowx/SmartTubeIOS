@@ -364,9 +364,14 @@ final class TOSPlayerViewModel: NSObject {
         // Same user agent as `YouTubeClientCredentials.swift` (TVHTML5 bot
         // scraping) and the yuliskov Android SmartTube app's TV WebView
         // config — confirmed to work against YouTube's TV auth path.
+        //
+        // With a web session from the website sign-in (`WebSignInView`), use the web
+        // variant instead: it runs on those cookies, which pass YouTube's bot check.
         self.webView.customUserAgent =
-            "Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) " + "AppleWebKit/537.36 (KHTML, like Gecko) "
-            + "SamsungBrowser/2.1 Chrome/56.0.2924.0 TV Safari/537.36"
+            WebSession.storedSAPISID() != nil
+            ? WebSession.userAgent
+            : "Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) " + "AppleWebKit/537.36 (KHTML, like Gecko) "
+                + "SamsungBrowser/2.1 Chrome/56.0.2924.0 TV Safari/537.36"
         #if os(macOS)
         // NSView-level KVC — not available on iOS UIView.
         self.webView.setValue(false, forKey: "drawsBackground")

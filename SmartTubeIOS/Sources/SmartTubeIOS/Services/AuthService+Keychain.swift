@@ -29,7 +29,9 @@ extension AuthService {
         tokenExpiry = snap.tokenExpiry
         accountName = snap.accountName
         accountAvatarURL = snap.accountAvatarURL
-        sapisid = snap.sapisid
+        // A web session from the website sign-in lives in the persisted cookie jar, so it
+        // survives even when the Keychain copy of SAPISID is missing.
+        sapisid = WebSession.storedSAPISID() ?? snap.sapisid
         activePageId = snap.pageId
         ActiveChannel.shared.set(pageId: snap.pageId)
         // If the stored access token has already expired, clear it so that

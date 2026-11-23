@@ -11,6 +11,9 @@ public struct SettingsView: View {
     @Environment(AuthService.self) private var auth
     @Environment(SettingsStore.self) private var store
     @State private var showSignIn = false
+    #if canImport(WebKit)
+    @State private var showWebSignIn = false
+    #endif
     @State private var reportSent = false
     #if os(tvOS)
     @State private var showGithubQR = false
@@ -129,6 +132,21 @@ public struct SettingsView: View {
                     .accessibilityIdentifier("settings.signInButton")
                     .sheet(isPresented: $showSignIn) { SignInView() }
             }
+            #if canImport(WebKit)
+            if auth.sapisid != nil {
+                Button("Sign Out of YouTube Website", role: .destructive) {
+                    Task { await auth.clearWebSession() }
+                }
+                .accessibilityIdentifier("settings.webSignOutButton")
+                #if DEBUG
+                Button("Test Web Session") { Task { await auth.debugProbeWebSession() } }
+                #endif
+            } else {
+                Button("Sign in to YouTube Website") { showWebSignIn = true }
+                    .accessibilityIdentifier("settings.webSignInButton")
+                    .sheet(isPresented: $showWebSignIn) { WebSignInView() }
+            }
+            #endif
         }
     }
 
