@@ -31,10 +31,16 @@ extension AuthService {
     /// Signs out of the web session: removes its cookies and drops SAPISID.
     func clearWebSession() async {
         #if canImport(WebKit)
-        let store = WKWebsiteDataStore.default().httpCookieStore
-        for cookie in WebSession.sessionCookies(await store.allCookies()) {
-            await store.deleteCookie(cookie)
+        // All of WebKit's Google and YouTube website data, not just the session cookies: Google
+        // also keeps the sign-in under country domains (google.de, …), and a leftover sign-in
+        // would complete the next website sign-in without asking.
+        let dataStore = WKWebsiteDataStore.default()
+        let types = WKWebsiteDataStore.allWebsiteDataTypes()
+        let records = await dataStore.dataRecords(ofTypes: types).filter { record in
+            let name = record.displayName.lowercased()
+            return name.contains("google") || name.contains("youtube")
         }
+        await dataStore.removeData(ofTypes: types, for: records)
         #endif
         for cookie in WebSession.sessionCookies(HTTPCookieStorage.shared.cookies ?? []) {
             HTTPCookieStorage.shared.deleteCookie(cookie)

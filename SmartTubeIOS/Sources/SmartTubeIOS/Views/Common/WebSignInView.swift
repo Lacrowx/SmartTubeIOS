@@ -24,16 +24,84 @@ struct WebSignInView: View {
                 .foregroundStyle(.secondary)
                 .padding()
                 WebSignInWebView { store in
-                    if await auth.adoptWebSession(from: store) { dismiss() }
+                    if await auth.adoptWebSession(from: store) {
+                        WebSignInSession.shared.end()
+                        dismiss()
+                    }
                 }
             }
             .navigationTitle("Sign in to YouTube")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        WebSignInSession.shared.end()
+                        dismiss()
+                    }
                 }
             }
         }
+        // Only Cancel or a finished sign-in end the session, so a swipe can't lose it.
+        .interactiveDismissDisabled()
+    }
+}
+
+// MARK: - WebSignInSession
+
+/// Owns the sign-in web view for the whole sign-in, independent of SwiftUI's view lifetime.
+/// SwiftUI rebuilds the sheet's view when the app returns from the background (for example
+/// after fetching a 2-step code from Messages); a view-owned web view would then start the
+/// sign-in over from the first page.
+@MainActor
+final class WebSignInSession: NSObject, WKNavigationDelegate {
+    static let shared = WebSignInSession()
+
+    private var webView: WKWebView?
+    private var onComplete: (@MainActor (WKHTTPCookieStore) async -> Void)?
+    private var completed = false
+
+    /// The sign-in web view: the one in progress, or a new one on the sign-in page.
+    func webView(onComplete: @escaping @MainActor (WKHTTPCookieStore) async -> Void) -> WKWebView {
+        self.onComplete = onComplete
+        if let webView { return webView }
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = .default()
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.customUserAgent = WebSession.userAgent
+        webView.navigationDelegate = self
+        webView.load(URLRequest(url: WebSession.signInURL))
+        self.webView = webView
+        completed = false
+        return webView
+    }
+
+    /// Discards the web view; the next sign-in starts on the first page.
+    func end() {
+        webView?.navigationDelegate = nil
+        webView = nil
+        onComplete = nil
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        Task { await checkCompletion(webView) }
+    }
+
+    /// iOS may end a backgrounded web view's content process; reload the page it was on.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        webSignInLog.notice("web content process ended; reloading the current page")
+        webView.reload()
+    }
+
+    private func checkCompletion(_ webView: WKWebView) async {
+        guard !completed, webView === self.webView else { return }
+        let store = webView.configuration.websiteDataStore.httpCookieStore
+        let cookies = await store.allCookies()
+        let host = webView.url?.host ?? "nil"
+        webSignInLog.notice(
+            "page loaded host=\(host, privacy: .public) cookies=\(WebSession.sessionCookies(cookies).count)")
+        guard WebSession.isComplete(url: webView.url, cookies: cookies) else { return }
+        completed = true
+        webSignInLog.notice("web sign-in complete")
+        await onComplete?(store)
     }
 }
 
@@ -44,54 +112,17 @@ private struct WebSignInWebView {
     /// Called with the cookie store once the sign-in has completed.
     let onComplete: @MainActor (WKHTTPCookieStore) async -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onComplete: onComplete) }
-
-    func makeWebView(coordinator: Coordinator) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.websiteDataStore = .default()
-        let webView = WKWebView(frame: .zero, configuration: config)
-        webView.customUserAgent = WebSession.userAgent
-        webView.navigationDelegate = coordinator
-        webView.load(URLRequest(url: WebSession.signInURL))
-        return webView
-    }
-
-    @MainActor
-    final class Coordinator: NSObject, WKNavigationDelegate {
-        private let onComplete: @MainActor (WKHTTPCookieStore) async -> Void
-        private var completed = false
-
-        init(onComplete: @escaping @MainActor (WKHTTPCookieStore) async -> Void) {
-            self.onComplete = onComplete
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            Task { await checkCompletion(webView) }
-        }
-
-        private func checkCompletion(_ webView: WKWebView) async {
-            guard !completed else { return }
-            let store = webView.configuration.websiteDataStore.httpCookieStore
-            let cookies = await store.allCookies()
-            let host = webView.url?.host ?? "nil"
-            webSignInLog.notice(
-                "page loaded host=\(host, privacy: .public) cookies=\(WebSession.sessionCookies(cookies).count)")
-            guard WebSession.isComplete(url: webView.url, cookies: cookies) else { return }
-            completed = true
-            webSignInLog.notice("web sign-in complete")
-            await onComplete(store)
-        }
-    }
+    func makeWebView() -> WKWebView { WebSignInSession.shared.webView(onComplete: onComplete) }
 }
 
 #if os(macOS)
 extension WebSignInWebView: NSViewRepresentable {
-    func makeNSView(context: Context) -> WKWebView { makeWebView(coordinator: context.coordinator) }
+    func makeNSView(context: Context) -> WKWebView { makeWebView() }
     func updateNSView(_ nsView: WKWebView, context: Context) {}
 }
 #else
 extension WebSignInWebView: UIViewRepresentable {
-    func makeUIView(context: Context) -> WKWebView { makeWebView(coordinator: context.coordinator) }
+    func makeUIView(context: Context) -> WKWebView { makeWebView() }
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
 #endif
