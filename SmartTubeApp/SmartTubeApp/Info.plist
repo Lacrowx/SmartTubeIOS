@@ -38,7 +38,7 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.entertainment</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>SmartTube uses your local network to find AirPlay-compatible devices for casting videos to your TV.</string>
+	<string>SmartTube uses your local network to find AirPlay-compatible devices for casting videos to your TV, and to send your YouTube website sign-in to your Apple TV when you scan its code.</string>
 	<!-- Downloading is compiled out (App Store guideline 5.2.3). When building with
 	     ENABLE_DOWNLOADS, restore these keys:
 	<key>NSPhotoLibraryAddUsageDescription</key>

@@ -213,8 +213,11 @@ extension InnerTubeAPI {
     /// non-embeddable videos where all other clients return only `serverAbrStreamingUrl`.
     /// The Safari UA is the key differentiator — nameID=1 with Chrome UA does not return
     /// HLS manifest. HLS segments from manifest.googlevideo.com do not require pot= tokens.
-    public func fetchPlayerInfoWebSafari(videoId: String) async throws -> PlayerInfo {
-        let sts = await fetchSignatureTimestampIfNeeded()
+    /// Pass `signatureTimestamp` to bind the returned stream URLs to a specific player script
+    /// (see `NChallengeSolver`); by default the homepage's current timestamp is used.
+    public func fetchPlayerInfoWebSafari(videoId: String, signatureTimestamp: Int? = nil) async throws -> PlayerInfo {
+        let fetchedSTS = signatureTimestamp == nil ? await fetchSignatureTimestampIfNeeded() : nil
+        let sts = signatureTimestamp ?? fetchedSTS
         var cpbc: [String: Any] = ["html5Preference": "HTML5_PREF_WANTS"]
         if let sts { cpbc["signatureTimestamp"] = sts }
 

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// A YouTube web session: the cookies from a real sign-in on accounts.google.com.
@@ -34,6 +35,32 @@ public enum WebSession {
     /// The youtube.com and google.com cookies that make up the session.
     public static func sessionCookies(_ cookies: [HTTPCookie]) -> [HTTPCookie] {
         cookies.filter { cookie in sessionDomains.contains { matches(cookie.domain, $0) } }
+    }
+
+    /// The `Authorization` value YouTube's web player sends for a signed-in session:
+    /// `SAPISIDHASH`, `SAPISID1PHASH` and `SAPISID3PHASH`, each `{ts}_{sha1("{ts} {cookie} {origin}")}`
+    /// over the `SAPISID`, `__Secure-1PAPISID` and `__Secure-3PAPISID` cookies. YouTube's bot
+    /// check accepts the session only with this full form plus `X-Goog-AuthUser`; SAPISIDHASH
+    /// alone is refused. Returns nil without a SAPISID.
+    public static func authorization(
+        cookies: [HTTPCookie], origin: String = "https://www.youtube.com", now: Date = Date()
+    ) -> String? {
+        let youtube = cookies.filter { matches($0.domain, "youtube.com") }
+        func value(_ name: String) -> String? {
+            youtube.first { $0.name == name && !$0.value.isEmpty }?.value
+        }
+        guard value("SAPISID") != nil else { return nil }
+        let timestamp = Int(now.timeIntervalSince1970)
+        let parts: [(scheme: String, cookie: String)] = [
+            ("SAPISIDHASH", "SAPISID"), ("SAPISID1PHASH", "__Secure-1PAPISID"), ("SAPISID3PHASH", "__Secure-3PAPISID"),
+        ]
+        return parts.compactMap { part in
+            value(part.cookie).map { "\(part.scheme) \(timestamp)_\(sha1Hex("\(timestamp) \($0) \(origin)"))" }
+        }.joined(separator: " ")
+    }
+
+    private static func sha1Hex(_ text: String) -> String {
+        Insecure.SHA1.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     /// The SAPISID of a web session already in `HTTPCookieStorage.shared`, if any.

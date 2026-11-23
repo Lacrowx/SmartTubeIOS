@@ -377,6 +377,8 @@ extension PlaybackViewModel {
         stallCount = 0
         firstRapidStallTime = nil
         needsQuickStartup = true
+        webSessionNChallenge = nil
+        webSessionHLSLoader = nil
         // Note: isLoading = false is set in the AVPlayerItem .readyToPlay observer so the
         // spinner stays visible until the first frame is actually ready. It was previously
         // cleared after player.rate was set, which dismissed the spinner before buffering
@@ -664,7 +666,10 @@ extension PlaybackViewModel {
                         // and the parallel tracking request has not reached /player yet.
                         authTrackingTask?.cancel()
                         await VideoPreloadCache.shared.pauseForNetworkBlock()
-                        throw error
+                        // A web session (website sign-in) passes the bot check: one request
+                        // through it, otherwise report the block.
+                        guard let webInfo = await playerInfoThroughWebSession(videoId: video.id) else { throw error }
+                        info = webInfo
                     } else if case APIError.unavailable = error, hasAuthToken {
                         playerLog.notice("⚠️ iOS client returned unavailable — retrying with authenticated TV client")
                         do {
@@ -698,7 +703,10 @@ extension PlaybackViewModel {
                         throw error
                     }
                 }
-                await VideoPreloadCache.shared.store(playerInfo: info, for: video.id)
+                // A web-session stream needs this load's solved n; don't cache it for prefetch.
+                if webSessionNChallenge == nil {
+                    await VideoPreloadCache.shared.store(playerInfo: info, for: video.id)
+                }
             }
             // BUG-005 fix: guard against rapid navigation — if the user navigated away while we
             // were awaiting the player info, discard this result rather than overwrite ViewModel state.
@@ -859,10 +867,12 @@ extension PlaybackViewModel {
                 initialHeaders["Origin"] = "https://www.youtube.com"
                 initialHeaders["Referer"] = "https://www.youtube.com/"
             }
-            let playerAsset = AVURLAsset(
-                url: initialStreamURL,
-                options: ["AVURLAssetHTTPHeaderFieldsKey": initialHeaders]
-            )
+            let playerAsset =
+                (isHLS ? webSessionAsset(for: initialStreamURL) : nil)
+                ?? AVURLAsset(
+                    url: initialStreamURL,
+                    options: ["AVURLAssetHTTPHeaderFieldsKey": initialHeaders]
+                )
             let item = AVPlayerItem(asset: playerAsset)
             // .spectral gives the highest-quality pitch-preserving time-stretch at
             // non-1× speeds, reducing the tinny/phase artefacts audible on AirPods

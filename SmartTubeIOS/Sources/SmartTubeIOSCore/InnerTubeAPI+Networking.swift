@@ -521,8 +521,7 @@ extension InnerTubeAPI {
         // This is the yt-dlp web-client auth scheme — the only scheme www.youtube.com accepts
         // for web client nameIDs. Falls through to unauthenticated (LOGIN_REQUIRED) when absent.
         if let sid = sapisid {
-            request.setValue(InnerTubeAPI.sapisidhash(sapisid: sid), forHTTPHeaderField: "Authorization")
-            request.setValue("1", forHTTPHeaderField: "X-Origin")
+            applyWebSessionAuth(sapisid: sid, to: &request)
         } else if let token = authToken {
             // Fallback: Bearer token + X-Goog-AuthUser header — the auth scheme yt-dlp uses
             // when it has an OAuth token but no browser-cookie SAPISID.
@@ -709,8 +708,7 @@ extension InnerTubeAPI {
         // opts in, where a 400 just means no account-bound URLs rather than broken playback.
         let authStatus: String
         if let sid = sapisid {
-            request.setValue(InnerTubeAPI.sapisidhash(sapisid: sid), forHTTPHeaderField: "Authorization")
-            request.setValue("1", forHTTPHeaderField: "X-Origin")
+            applyWebSessionAuth(sapisid: sid, to: &request)
             authStatus = "SAPISIDHASH"
         } else if allowBearerFallback, let token = authToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -723,7 +721,8 @@ extension InnerTubeAPI {
         // Use the override visitor ID (from WKWebView guide call) when provided, so the
         // X-Goog-Visitor-Id header matches the context.client.visitorData in the body and
         // the minted BotGuard pot= token identifier — required for CDN URL validation.
-        let effectiveVD = visitorIdOverride ?? visitorData
+        // A web session's cookies carry its own visitor; an unrelated visitorData would not match.
+        let effectiveVD = visitorIdOverride ?? (sapisid == nil ? visitorData : nil)
         if let vd = effectiveVD {
             request.setValue(vd, forHTTPHeaderField: "X-Goog-Visitor-Id")
         }
@@ -931,6 +930,17 @@ extension InnerTubeAPI {
 // MARK: - SAPISIDHASH helper
 
 extension InnerTubeAPI {
+
+    /// Signs `request` with the web session: the full `WebSession.authorization` built from the
+    /// youtube.com cookies (sent by this session's cookie storage), falling back to SAPISIDHASH
+    /// alone, plus `X-Origin` and `X-Goog-AuthUser`.
+    func applyWebSessionAuth(sapisid: String, to request: inout URLRequest) {
+        let cookies = request.url.flatMap { HTTPCookieStorage.shared.cookies(for: $0) } ?? []
+        let authorization = WebSession.authorization(cookies: cookies) ?? InnerTubeAPI.sapisidhash(sapisid: sapisid)
+        request.setValue(authorization, forHTTPHeaderField: "Authorization")
+        request.setValue("https://www.youtube.com", forHTTPHeaderField: "X-Origin")
+        request.setValue("0", forHTTPHeaderField: "X-Goog-AuthUser")
+    }
 
     /// Computes the SAPISIDHASH Authorization header value for www.youtube.com web-client requests.
     ///

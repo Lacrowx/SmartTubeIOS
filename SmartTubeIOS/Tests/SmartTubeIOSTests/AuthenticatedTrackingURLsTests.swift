@@ -224,11 +224,12 @@ struct AuthenticatedTrackingURLsTests {
             auth?.hasPrefix("SAPISIDHASH ") == true,
             "With SAPISID set, request must use SAPISIDHASH Authorization (the only auth scheme www.youtube.com accepts for web-client nameIDs). Captured Authorization: \(auth ?? "<none>")"
         )
-        // The X-Origin header is required for SAPISIDHASH auth (per postWebSafari's existing wiring).
+        // YouTube's web player sends X-Origin (the origin) and X-Goog-AuthUser with a web session.
         #expect(
-            playerHeaders["X-Origin"] == "1",
-            "SAPISIDHASH auth requires X-Origin: 1 (set by postWebSafari). Captured headers: \(playerHeaders.keys.sorted())"
+            playerHeaders["X-Origin"] == "https://www.youtube.com",
+            "SAPISIDHASH auth sends X-Origin: https://www.youtube.com. Captured headers: \(playerHeaders.keys.sorted())"
         )
+        #expect(playerHeaders["X-Goog-AuthUser"] == "0")
     }
 
     @Test("fetchAuthenticatedTrackingURLs falls back to Bearer when SAPISID is absent")

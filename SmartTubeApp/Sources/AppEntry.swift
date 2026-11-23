@@ -37,6 +37,8 @@ struct AppEntry: App {
     #endif
     @Environment(\.scenePhase) private var scenePhase
     #if os(iOS)
+    /// A scanned Apple TV pairing code waiting for the user's confirmation.
+    @State private var pairingInvitation: WebSessionPairing.Invitation?
     @State private var watchLaterAlert: WatchLaterAlert?
     private struct WatchLaterAlert: Identifiable {
         let id = UUID()
@@ -349,6 +351,7 @@ struct AppEntry: App {
                         dismissButton: .default(Text("OK"))
                     )
                 }
+                .webSessionPairingPrompt($pairingInvitation)
                 #endif
             }
         }
@@ -359,6 +362,13 @@ struct AppEntry: App {
 
     @MainActor
     private func handleOpenURL(_ url: URL) {
+        #if os(iOS)
+        // smarttube://pair-tv from the Apple TV's QR code: ask before sending the web session.
+        if let invitation = WebSessionPairing.Invitation(url: url) {
+            pairingInvitation = invitation
+            return
+        }
+        #endif
         // smarttube://video/ID and smarttube://watch?v=ID come from the Share Extension, the
         // widget and hand-built links (#84); the other routes from App Intents and Spotlight.
         // See SmartTubeRoute for the full list.

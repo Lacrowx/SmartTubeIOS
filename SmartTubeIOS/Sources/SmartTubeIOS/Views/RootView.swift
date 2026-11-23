@@ -384,7 +384,26 @@ struct MainTVTabView: View {
         .onReceive(NotificationCenter.default.publisher(for: .activeChannelDidChange)) { _ in
             selectedTab = .home
         }
+        #if DEBUG
+        // Testing only (no remote in automated runs): `--uitesting-web-session-pairing` opens the
+        // web-session pairing screen, `--uitesting-deeplink-video=<id>` opens the player.
+        .onAppear {
+            let args = ProcessInfo.processInfo.arguments
+            showPairingForTesting = args.contains("--uitesting-web-session-pairing")
+            if let arg = args.first(where: { $0.hasPrefix("--uitesting-deeplink-video=") }) {
+                videoForTesting = Video(
+                    id: String(arg.dropFirst("--uitesting-deeplink-video=".count)), title: "", channelTitle: "")
+            }
+        }
+        .sheet(isPresented: $showPairingForTesting) { WebSessionPairingView() }
+        .fullScreenCover(item: $videoForTesting) { video in PlayerView(video: video, api: api) }
+        #endif
     }
+
+    #if DEBUG
+    @State private var showPairingForTesting = false
+    @State private var videoForTesting: Video?
+    #endif
 }
 #endif
 

@@ -64,6 +64,18 @@ actor NChallengeSolver {
     private var context: JSContext?
     private var preparedVersion: String?
     private var solved: [String: String] = [:]
+    private var player: (script: YouTubePlayerScript, fetched: Date)?
+    private static let playerLifetime: TimeInterval = 3600
+
+    /// The current player script, fetched at most once an hour.
+    func currentPlayer() async throws -> YouTubePlayerScript {
+        if let player, Date().timeIntervalSince(player.fetched) < Self.playerLifetime {
+            return player.script
+        }
+        let script = try await YouTubePlayerScript.fetchCurrent()
+        player = (script, Date())
+        return script
+    }
 
     /// Returns `challenge → solution` for each `n` challenge.
     func solve(_ challenges: [String], player: YouTubePlayerScript) throws -> [String: String] {
