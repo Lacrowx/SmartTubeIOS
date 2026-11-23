@@ -25,6 +25,7 @@ struct StatsForNerdsOverlay: View {
                     valueId: "stats.selectedQuality")
             }
             row("Codec", snapshot.codec)
+            row("Stream", snapshot.videoStream.isEmpty ? "—" : snapshot.videoStream)
             row("Nominal Bitrate", snapshot.nominalBitrate)
             row("Connection Speed", snapshot.observedBitrate)
             row("Dropped Frames", "\(snapshot.droppedFrames)")

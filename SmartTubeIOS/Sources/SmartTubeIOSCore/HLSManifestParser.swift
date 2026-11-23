@@ -314,3 +314,48 @@ private func hlsMediaLineIsOriginalAudio(_ line: String) -> Bool {
     return data.range(of: Data("original".utf8)) != nil
         && data.range(of: Data("dubbed".utf8)) == nil
 }
+
+// MARK: - Selected variant lookup (Stats for Nerds)
+
+/// One `#EXT-X-STREAM-INF` entry, summarised for display.
+public struct HLSVariantSummary: Equatable, Sendable {
+    public let bandwidth: Int
+    /// First (video) codec from `CODECS`, e.g. `vp09.02.51.10.01.09.16.09.00`.
+    public let videoCodec: String
+    /// `VIDEO-RANGE` (`SDR` when the attribute is absent).
+    public let videoRange: String
+    public let resolution: String
+
+    /// e.g. `vp09.02 · PQ · 3840x2160`.
+    public var displayText: String {
+        let shortCodec = videoCodec.split(separator: ".").prefix(2).joined(separator: ".")
+        return "\(shortCodec) · \(videoRange) · \(resolution)"
+    }
+}
+
+/// Finds the variant AVPlayer is playing: `AVPlayerItemAccessLogEvent.indicatedBitrate` is
+/// the selected variant's `BANDWIDTH`. Exact match first, otherwise the nearest value.
+public func hlsVariant(forBandwidth bandwidth: Double, inMultivariant manifest: String) -> HLSVariantSummary? {
+    guard bandwidth > 0 else { return nil }
+    let variants: [HLSVariantSummary] = manifest.components(separatedBy: .newlines).compactMap { line in
+        guard line.hasPrefix("#EXT-X-STREAM-INF:"),
+            let bw = hlsAttribute("BANDWIDTH", in: line).flatMap(Int.init)
+        else { return nil }
+        let codecs = hlsAttribute("CODECS", in: line) ?? ""
+        return HLSVariantSummary(
+            bandwidth: bw,
+            videoCodec: codecs.split(separator: ",").first.map(String.init) ?? "",
+            videoRange: hlsAttribute("VIDEO-RANGE", in: line) ?? "SDR",
+            resolution: hlsAttribute("RESOLUTION", in: line) ?? "?")
+    }
+    return variants.min { abs(Double($0.bandwidth) - bandwidth) < abs(Double($1.bandwidth) - bandwidth) }
+}
+
+/// Reads `NAME=value` or `NAME="value"` from an HLS attribute list. Matches whole attribute
+/// names only, so `BANDWIDTH` does not match inside `AVERAGE-BANDWIDTH`.
+private func hlsAttribute(_ name: String, in line: String) -> String? {
+    guard let range = line.range(of: #"(?<=[:,])"# + name + #"=("[^"]*"|[^,]*)"#, options: .regularExpression)
+    else { return nil }
+    let value = line[range].dropFirst(name.count + 1)
+    return String(value).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+}

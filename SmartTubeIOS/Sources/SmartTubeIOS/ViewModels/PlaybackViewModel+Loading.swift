@@ -178,6 +178,7 @@ extension PlaybackViewModel {
         tvEmbeddedEarlyTask = nil
         #endif
         qualityManager.reset()
+        av1PlaylistLoader = nil
         phase2Task?.cancel()
         phase2Task = nil
         prefetchTask?.cancel()

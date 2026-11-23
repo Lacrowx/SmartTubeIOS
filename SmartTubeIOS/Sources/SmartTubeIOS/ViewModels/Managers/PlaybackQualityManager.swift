@@ -318,6 +318,9 @@ final class PlaybackQualityManager {
         nativeHLSProxyLoader = nil
     }
 
+    /// Master manifest the HLS proxy last served to AVFoundation, if the proxy is in use.
+    var currentHLSMultivariantManifest: String? { nativeHLSProxyLoader?.lastMultivariantManifest }
+
     func makeHLSAsset(url: URL, options: [String: Any]) -> AVURLAsset {
         guard let allowedVideoCodecs = hlsAllowedVideoCodecs,
             let proxyURL = url.proxyURL

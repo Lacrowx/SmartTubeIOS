@@ -16,6 +16,9 @@ final class InMemoryPlaylistLoader: NSObject, AVAssetResourceLoaderDelegate, @un
         self.playlists = playlists.mapValues { Data($0.utf8) }
     }
 
+    /// The master playlist text (`master.m3u8`), for Stats for Nerds.
+    var multivariantPlaylist: String? { playlists["master.m3u8"].flatMap { String(bytes: $0, encoding: .utf8) } }
+
     /// `ytlocalhls://playlist/<name>`
     static func url(for name: String) -> URL? {
         URL(string: "\(scheme)://playlist/\(name)")

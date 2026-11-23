@@ -13,6 +13,16 @@ extension PlaybackViewModel {
         if statsForNerdsVisible { updateStatsSnapshot() }
     }
 
+    /// The playing HLS variant, e.g. `vp09.02 · PQ · 3840x2160`, or `—`. The access log's
+    /// `indicatedBitrate` is that variant's `BANDWIDTH` in the multivariant playlist we served.
+    private func selectedHLSVariantText(logEvent: AVPlayerItemAccessLogEvent?) -> String {
+        guard let logEvent,
+            let playlist = av1PlaylistLoader?.multivariantPlaylist ?? qualityManager.currentHLSMultivariantManifest,
+            let variant = hlsVariant(forBandwidth: logEvent.indicatedBitrate, inMultivariant: playlist)
+        else { return "—" }
+        return variant.displayText
+    }
+
     func updateStatsSnapshot() {
         guard let item = player.currentItem else {
             statsSnapshot = .empty
@@ -69,6 +79,8 @@ extension PlaybackViewModel {
             observedBitrate = "—"
         }
 
+        let videoStream = selectedHLSVariantText(logEvent: logEvent)
+
         let droppedFrames = logEvent.map { $0.numberOfDroppedVideoFrames } ?? 0
         let stalls = logEvent.map { $0.numberOfStalls } ?? 0
 
@@ -80,9 +92,9 @@ extension PlaybackViewModel {
         let codecChanged = codec != prevSnap.codec && prevSnap.codec != "—"
         let resChanged = res != prevSnap.displayResolution && prevSnap.displayResolution != "—"
         let isFirstSnap = prevSnap.videoId != videoId
-        if isFirstSnap || codecChanged || resChanged {
+        if isFirstSnap || codecChanged || resChanged || videoStream != prevSnap.videoStream {
             playerLog.notice(
-                "[stats] snapshot — res=\(res) codec=\(codec) source=\(resSource)\(codecChanged ? " ⚠️codec-changed" : "")\(resChanged ? " ⚠️res-changed" : "")"
+                "[stats] snapshot — res=\(res) codec=\(codec) stream=\(videoStream) source=\(resSource)\(codecChanged ? " ⚠️codec-changed" : "")\(resChanged ? " ⚠️res-changed" : "")"
             )
         } else {
             playerLog.debug("[stats] snapshot — res=\(res) codec=\(codec) source=\(resSource)")
@@ -93,6 +105,7 @@ extension PlaybackViewModel {
             displayResolution: res,
             fps: fps,
             codec: codec,
+            videoStream: videoStream,
             nominalBitrate: nominalBitrate,
             observedBitrate: observedBitrate,
             droppedFrames: droppedFrames,
@@ -145,6 +158,8 @@ public struct StatsForNerdsSnapshot: Sendable {
     public var displayResolution: String
     public var fps: Int
     public var codec: String
+    /// Selected HLS variant, e.g. `vp09.02 · PQ · 3840x2160`; `—` when unknown.
+    public var videoStream: String
     public var nominalBitrate: String
     public var observedBitrate: String
     public var droppedFrames: Int
@@ -172,6 +187,7 @@ public struct StatsForNerdsSnapshot: Sendable {
         displayResolution: "",
         fps: 0,
         codec: "",
+        videoStream: "",
         nominalBitrate: "",
         observedBitrate: "",
         droppedFrames: 0,

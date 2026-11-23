@@ -263,4 +263,32 @@ struct HLSManifestParserTests {
         let result = parseHLSBestVariant(from: manifest, baseURL: masterURL, minHeight: 0)
         #expect(result == URL(string: "https://cdn.example.com/hls/1080p.m3u8"))
     }
+
+    // MARK: - hlsVariant(forBandwidth:inMultivariant:)
+
+    private static let statsMultivariant = """
+        #EXTM3U
+        #EXT-X-STREAM-INF:BANDWIDTH=5098276,AVERAGE-BANDWIDTH=4000000,CODECS="avc1.64002A,mp4a.40.2",RESOLUTION=1920x1080,AUDIO="234"
+        h264.m3u8
+        #EXT-X-STREAM-INF:BANDWIDTH=29707789,CODECS="vp09.00.51.08,mp4a.40.2",RESOLUTION=3840x2160,VIDEO-RANGE=SDR,AUDIO="234"
+        vp9.m3u8
+        #EXT-X-STREAM-INF:BANDWIDTH=32574395,CODECS="vp09.02.51.10.01.09.16.09.00,mp4a.40.2",RESOLUTION=3840x2160,VIDEO-RANGE=PQ,AUDIO="234"
+        vp9hdr.m3u8
+        """
+
+    @Test func selectedVariant_exactBandwidth_reportsCodecRangeAndResolution() {
+        let variant = hlsVariant(forBandwidth: 32_574_395, inMultivariant: Self.statsMultivariant)
+        #expect(variant?.displayText == "vp09.02 · PQ · 3840x2160")
+    }
+
+    @Test func selectedVariant_missingVideoRange_isSDR_andAverageBandwidthIsIgnored() {
+        // 4_000_000 is only an AVERAGE-BANDWIDTH; nearest BANDWIDTH is the H.264 variant.
+        let variant = hlsVariant(forBandwidth: 4_000_000, inMultivariant: Self.statsMultivariant)
+        #expect(variant?.displayText == "avc1.64002A · SDR · 1920x1080")
+    }
+
+    @Test func selectedVariant_nearestMatch_andZeroBandwidthIsNil() {
+        #expect(hlsVariant(forBandwidth: 29_700_000, inMultivariant: Self.statsMultivariant)?.videoRange == "SDR")
+        #expect(hlsVariant(forBandwidth: 0, inMultivariant: Self.statsMultivariant) == nil)
+    }
 }

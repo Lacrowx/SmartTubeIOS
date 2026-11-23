@@ -64,6 +64,10 @@ final class YTHLSProxyLoader: NSObject, AVAssetResourceLoaderDelegate, @unchecke
     let maximumVideoHeight: Int?
     let allowedVideoCodecs: [String]?
     private let lock = NSLock()
+    private var _lastMultivariantManifest: String?
+    /// The master manifest as handed to AVFoundation (after filtering) — Stats for Nerds
+    /// maps the selected variant's bandwidth back to its codec and VIDEO-RANGE.
+    var lastMultivariantManifest: String? { lock.withLock { _lastMultivariantManifest } }
     private var activeTasks: [ObjectIdentifier: URLSessionDataTask] = [:]
 
     init(
@@ -256,6 +260,10 @@ final class YTHLSProxyLoader: NSObject, AVAssetResourceLoaderDelegate, @unchecke
             proxyLog.notice(
                 "[HLSProxy] filtered master to \(allowedVideoCodecs, privacy: .public) <= \(self.maximumVideoHeight.map { "\($0)p" } ?? "any", privacy: .public)"
             )
+        }
+        if isMasterManifest {
+            let servedManifest = text
+            lock.withLock { _lastMultivariantManifest = servedManifest }
         }
         if !text.contains("#EXTINF") && !isMasterManifest {
             let rawLines = text.components(separatedBy: "\n")
