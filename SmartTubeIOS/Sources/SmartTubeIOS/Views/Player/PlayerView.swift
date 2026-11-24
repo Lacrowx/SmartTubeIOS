@@ -128,6 +128,7 @@ public struct PlayerView: View {
 
     public var body: some View {
         bodyWithLifecycleModifiers
+            .webSessionRouteToast(vm.webSessionRoute)
     }
 
     // MARK: - Lifecycle + full player body

@@ -121,7 +121,8 @@ extension PlaybackViewModel {
                 let path = components.isEmpty ? "" : "/" + components.joined(separator: "/")
                 return host + path
             } ?? "—",
-            streamType: lastSuccessfulStreamType
+            streamType: lastSuccessfulStreamType,
+            webSessionRoute: webSessionRoute?.label ?? ""
         )
     }
 
@@ -181,6 +182,8 @@ public struct StatsForNerdsSnapshot: Sendable {
     public var streamURL: String
     /// Which loading path produced the current stream (e.g. "primaryHLS", "webView/HLS").
     public var streamType: String
+    /// The web-session route after a bot check (`WebSessionRoute.label`); empty otherwise.
+    public var webSessionRoute: String
 
     public static let empty = StatsForNerdsSnapshot(
         videoId: "",
@@ -198,6 +201,7 @@ public struct StatsForNerdsSnapshot: Sendable {
         timeToHighQualityMs: 0,
         cacheStatus: "",
         streamURL: "",
-        streamType: ""
+        streamType: "",
+        webSessionRoute: ""
     )
 }

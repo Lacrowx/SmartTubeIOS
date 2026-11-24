@@ -383,6 +383,7 @@ extension PlaybackViewModel {
         webSessionHLSLoader = nil
         webSessionTallestFormat = nil
         webSessionAdaptive = nil
+        webSessionRoute = nil
         // Note: isLoading = false is set in the AVPlayerItem .readyToPlay observer so the
         // spinner stays visible until the first frame is actually ready. It was previously
         // cleared after player.rate was set, which dismissed the spinner before buffering
@@ -656,7 +657,7 @@ extension PlaybackViewModel {
             } else {
                 do {
                     #if os(tvOS)
-                    if Self.forcesWebMRemux { throw APIError.ipBlocked("simulated for testing") }
+                    if Self.forcesBotCheck { throw APIError.ipBlocked("simulated for testing") }
                     #endif
                     info = try await api.fetchPlayerInfo(videoId: video.id)
                 } catch {
@@ -932,6 +933,7 @@ extension PlaybackViewModel {
                         if self.lastSuccessfulStreamType == "unknown" {
                             self.lastSuccessfulStreamType = isHLS ? "primaryHLS" : "primaryDirect"
                         }
+                        if isHLS, self.webSessionNChallenge != nil { self.webSessionRoute = .webHLS }
                         if elapsedMs > 4_000 {
                             CrashlyticsLogger.recordSlowVideoLoad(
                                 videoId: self.currentVideo?.id ?? "unknown",

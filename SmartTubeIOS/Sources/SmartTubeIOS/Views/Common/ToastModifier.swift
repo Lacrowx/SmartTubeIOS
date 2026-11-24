@@ -9,11 +9,12 @@ import SwiftUI
 // Usage:
 //   .toast(message: $someStringBinding)
 //
-// The binding is set to nil automatically after 2 seconds so callers never
+// The binding is set to nil automatically after 2 seconds (or the given duration) so callers never
 // have to schedule their own dismissal.
 
 private struct ToastModifier: ViewModifier {
     @Binding var message: String?
+    let duration: Duration
     @State private var dismissTask: Task<Void, Never>?
 
     func body(content: Content) -> some View {
@@ -25,7 +26,7 @@ private struct ToastModifier: ViewModifier {
                 dismissTask?.cancel()
                 guard newValue != nil else { return }
                 dismissTask = Task {
-                    try? await Task.sleep(for: .seconds(2))
+                    try? await Task.sleep(for: duration)
                     guard !Task.isCancelled else { return }
                     message = nil
                 }
@@ -50,8 +51,8 @@ private struct ToastModifier: ViewModifier {
 
 extension View {
     /// Displays a self-dismissing toast pill when `message` is non-nil.
-    /// The binding is automatically cleared after 2 seconds.
-    func toast(message: Binding<String?>) -> some View {
-        modifier(ToastModifier(message: message))
+    /// The binding is automatically cleared after `duration` (2 seconds by default).
+    func toast(message: Binding<String?>, duration: Duration = .seconds(2)) -> some View {
+        modifier(ToastModifier(message: message, duration: duration))
     }
 }

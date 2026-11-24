@@ -56,7 +56,7 @@ extension PlaybackViewModel {
         guard !order.isEmpty else { return false }
         // One VisionOS request serves both AV1 and VP9; reuse the one loadAsync started.
         let result: Result<PlayerInfo, any Error>
-        if Self.forcesWebMRemux {
+        if Self.forcesBotCheck {
             result = .failure(APIError.ipBlocked("simulated for testing"))
         } else if let fetch = tvCodecInfoFetch, fetch.videoId == video.id {
             result = await fetch.task.value
@@ -96,7 +96,7 @@ extension PlaybackViewModel {
             return false
         }
         if HLSPlaybackPolicy.av1DecoderAvailable, !Self.forcesWebMRemux,
-            await tryAV1UHDPlayback(video: video, info: webInfo)
+            await tryAV1UHDPlayback(video: video, info: webInfo, throughWebSession: true)
         {
             return true
         }
@@ -120,7 +120,7 @@ extension PlaybackViewModel {
     /// turned into an HLS playlist of byte ranges (`DASHToHLS`) that AVPlayer plays natively,
     /// with every AV1 height as a variant for ABR. Returns `false` to fall back to VP9 or the
     /// regular path.
-    private func tryAV1UHDPlayback(video: Video, info: PlayerInfo) async -> Bool {
+    private func tryAV1UHDPlayback(video: Video, info: PlayerInfo, throughWebSession: Bool = false) async -> Bool {
         let cap = effectiveQuality.maxHeight
         // HDR videos only have 10-bit PQ AV1; keep those only when the display can show HDR.
         let hdrOK = AVPlayer.eligibleForHDRPlayback
@@ -186,6 +186,7 @@ extension PlaybackViewModel {
             // Quality menu = the AV1 variants in the playlist; picking one caps this item's
             // ABR in place (`PlaybackQualityManager.selectFormat(_:inPlace:)`).
             availableFormats = ladder.filter { format in variants.contains { $0.height == format.height } }
+            if throughWebSession { webSessionRoute = .av1 }
             return true
         }
         av1PlaylistLoader = nil

@@ -83,6 +83,17 @@ extension PlaybackViewModel {
         #endif
     }
 
+    /// Testing only: `--uitesting-force-bot-check` treats the same requests as bot-checked
+    /// but keeps AV1, so the web session's AV1 path runs on any network. Also true with
+    /// `--uitesting-force-vp9-remux`.
+    static var forcesBotCheck: Bool {
+        #if DEBUG
+        forcesWebMRemux || ProcessInfo.processInfo.arguments.contains("--uitesting-force-bot-check")
+        #else
+        false
+        #endif
+    }
+
     /// After a bot check: plays the web session's VP9 WebM files above 1080p through
     /// `WebMRemuxServer`, HDR (`vp9.2`) when the display can show it. Returns false to fall back.
     func tryWebMRemuxPlayback(video: Video, info: PlayerInfo) async -> Bool {
@@ -124,6 +135,7 @@ extension PlaybackViewModel {
         if await playPreparedItem(item, for: video, info: info, label: label) {
             availableFormats = ladder.filter { format in server.variants.contains { $0.format.height == format.height }
             }
+            webSessionRoute = .vp9(hdr: hdr)
             return true
         }
         server.stop()

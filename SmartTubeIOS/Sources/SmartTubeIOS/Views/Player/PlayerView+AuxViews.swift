@@ -34,6 +34,9 @@ struct StatsForNerdsOverlay: View {
             row("TTP (low-q)", snapshot.timeToPlayMs > 0 ? "\(snapshot.timeToPlayMs) ms" : "—")
             row("TTP (hi-q)", snapshot.timeToHighQualityMs > 0 ? "\(snapshot.timeToHighQualityMs) ms" : "—")
             row("Stream Type", snapshot.streamType.isEmpty ? "—" : snapshot.streamType)
+            if !snapshot.webSessionRoute.isEmpty {
+                row("Web Session", snapshot.webSessionRoute)
+            }
             row("Cache", snapshot.cacheStatus.isEmpty ? "—" : snapshot.cacheStatus)
             smallRow("Stream URL", snapshot.streamURL.isEmpty ? "—" : snapshot.streamURL)
             Divider().background(.white.opacity(0.2)).padding(.vertical, 2)
