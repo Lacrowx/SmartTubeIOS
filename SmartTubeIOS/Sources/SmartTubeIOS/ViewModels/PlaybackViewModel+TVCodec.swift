@@ -9,24 +9,52 @@ private let playerLog = CrashlyticsLogger(category: "Player")
 
 extension PlaybackViewModel {
     #if os(tvOS)
+    /// The codecs to try for `settings.tvVideoCodec`, skipping ones this device can't decode.
+    /// Empty when only the regular H.264 path applies.
+    private var tvCodecPlaybackOrder: [AppSettings.TVVideoCodec] {
+        settings.tvVideoCodec.playbackOrder(
+            vp9Supported: HLSPlaybackPolicy.vp9DecoderAvailable,
+            av1Supported: HLSPlaybackPolicy.av1DecoderAvailable)
+    }
+
+    /// Starts the VisionOS player request for `tryTVPreferredCodecPlayback`, so it runs
+    /// alongside the regular request instead of after it. Does nothing when only H.264 applies.
+    func startTVCodecInfoFetch(videoId: String) {
+        tvCodecInfoFetch?.task.cancel()
+        tvCodecInfoFetch = nil
+        guard !tvCodecPlaybackOrder.isEmpty else { return }
+        let api = self.api
+        tvCodecInfoFetch = (videoId, Task { try? await api.fetchPlayerInfoVisionOS(videoId: videoId) })
+    }
+
     /// Plays `video` with the codec chosen in `settings.tvVideoCodec` before the regular
     /// path, which tops out at 1080p H.264 on Apple TV. Returns `false` to fall through.
     /// Codecs the device can't decode are skipped: AV1 falls back to VP9, VP9 to the regular path.
     func tryTVPreferredCodecPlayback(video: Video) async -> Bool {
         let choice = settings.tvVideoCodec
-        let order = choice.playbackOrder(
-            vp9Supported: HLSPlaybackPolicy.vp9DecoderAvailable,
-            av1Supported: HLSPlaybackPolicy.av1DecoderAvailable)
+        let order = tvCodecPlaybackOrder
         if order.first != choice, choice != .h264 {
             playerLog.notice(
                 "[VisionOS] \(choice.rawValue) not decodable on this device — trying \(order.map(\.rawValue))")
         }
+        guard !order.isEmpty else { return false }
+        // One VisionOS request serves both AV1 and VP9; reuse the one loadAsync started.
+        let info: PlayerInfo?
+        if let fetch = tvCodecInfoFetch, fetch.videoId == video.id {
+            info = await fetch.task.value
+        } else {
+            info = try? await api.fetchPlayerInfoVisionOS(videoId: video.id)
+        }
+        guard let info else {
+            playerLog.notice("[VisionOS] player request failed — falling back")
+            return false
+        }
         for codec in order {
             switch codec {
             case .av1:
-                if await tryAV1UHDPlayback(video: video) { return true }
+                if await tryAV1UHDPlayback(video: video, info: info) { return true }
             case .vp9:
-                if await tryVP9UHDPlayback(video: video) { return true }
+                if await tryVP9UHDPlayback(video: video, info: info) { return true }
             case .h264:
                 break
             }
@@ -36,11 +64,7 @@ extension PlaybackViewModel {
 
     /// VP9: YouTube's VisionOS HLS stream; attemptURL's HLS policy keeps its VP9 variants
     /// whenever the Video Codec choice is not H.264 and the VP9 decoder is available.
-    private func tryVP9UHDPlayback(video: Video) async -> Bool {
-        guard let info = try? await api.fetchPlayerInfoVisionOS(videoId: video.id) else {
-            playerLog.notice("[VisionOS/VP9] player request failed — falling back")
-            return false
-        }
+    private func tryVP9UHDPlayback(video: Video, info: PlayerInfo) async -> Bool {
         if await tryAllStreams(video: video, info: info, label: "VisionOS", skipMuxed: true) { return true }
         playerLog.notice("[VisionOS/VP9] failed — falling back")
         return false
@@ -53,11 +77,7 @@ extension PlaybackViewModel {
     /// turned into an HLS playlist of byte ranges (`DASHToHLS`) that AVPlayer plays natively,
     /// with every AV1 height as a variant for ABR. Returns `false` to fall back to VP9 or the
     /// regular path.
-    private func tryAV1UHDPlayback(video: Video) async -> Bool {
-        guard let info = try? await api.fetchPlayerInfoVisionOS(videoId: video.id) else {
-            playerLog.notice("[VisionOS/AV1] player request failed — falling back")
-            return false
-        }
+    private func tryAV1UHDPlayback(video: Video, info: PlayerInfo) async -> Bool {
         let cap = effectiveQuality.maxHeight
         // HDR videos only have 10-bit PQ AV1; keep those only when the display can show HDR.
         let hdrOK = AVPlayer.eligibleForHDRPlayback

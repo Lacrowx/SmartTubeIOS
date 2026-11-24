@@ -176,6 +176,8 @@ extension PlaybackViewModel {
         #if os(tvOS)
         tvEmbeddedEarlyTask?.cancel()
         tvEmbeddedEarlyTask = nil
+        tvCodecInfoFetch?.task.cancel()
+        tvCodecInfoFetch = nil
         #endif
         qualityManager.reset()
         av1PlaylistLoader = nil
@@ -382,6 +384,9 @@ extension PlaybackViewModel {
         playerLog.notice(
             "[loadAsync] start id=\(video.id) title=\(video.title) player.rate=\(self.player.rate) timeControlStatus=\(self.player.timeControlStatus.rawValue)"
         )
+        #if os(tvOS)
+        startTVCodecInfoFetch(videoId: video.id)
+        #endif
 
         #if canImport(UIKit)
         // Seed the lock-screen Now Playing widget BEFORE the ~10 s network phase so

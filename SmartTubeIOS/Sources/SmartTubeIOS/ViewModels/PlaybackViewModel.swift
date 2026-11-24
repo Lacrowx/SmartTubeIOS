@@ -259,6 +259,11 @@ public final class PlaybackViewModel {
     /// Retains the playlist loader behind the tvOS "4K via AV1" item (AVAssetResourceLoader
     /// holds its delegate weakly). Replaced on each AV1 attempt.
     @ObservationIgnored var av1PlaylistLoader: InMemoryPlaylistLoader?
+    #if os(tvOS)
+    /// The VisionOS player request for the tvOS VP9/AV1 path, started at the top of
+    /// `loadAsync` so it runs alongside the regular request. Shared by the AV1 and VP9 attempts.
+    @ObservationIgnored var tvCodecInfoFetch: (videoId: String, task: Task<PlayerInfo?, Never>)?
+    #endif
     /// Counts exhaustive retry cycles (0 = no retry yet). Set by exhaustiveRetry(video:originalError:).
     var retryAttempts: Int = 0
     /// The stream type that produced the current AVPlayerItem, set by each successful load path.
