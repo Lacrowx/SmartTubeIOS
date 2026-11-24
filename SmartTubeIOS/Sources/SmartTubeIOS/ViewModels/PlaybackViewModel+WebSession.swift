@@ -62,6 +62,68 @@ extension PlaybackViewModel {
         }
     }
 
+    #if os(tvOS)
+    /// Testing only: `--uitesting-force-vp9-remux` treats the VP9 path's VisionOS request as
+    /// bot-checked and skips AV1, so the WebM path runs on any network.
+    static var forcesWebMRemux: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--uitesting-force-vp9-remux")
+        #else
+        false
+        #endif
+    }
+
+    /// After a bot check: plays the web session's VP9 WebM files above 1080p through
+    /// `WebMRemuxServer`, HDR (`vp9.2`) when the display can show it. Returns false to fall back.
+    func tryWebMRemuxPlayback(video: Video, info: PlayerInfo) async -> Bool {
+        let cap = effectiveQuality.maxHeight
+        let hdrLadder = info.vp9VideoLadder(hdr: true, maximumHeight: cap)
+        let wantsHDR = AVPlayer.eligibleForHDRPlayback && hdrLadder.contains { $0.height > 1080 }
+        if wantsHDR, await playWebM(video: video, info: info, ladder: hdrLadder, hdr: true) { return true }
+        return await playWebM(
+            video: video, info: info, ladder: info.vp9VideoLadder(hdr: false, maximumHeight: cap), hdr: false)
+    }
+
+    private func playWebM(video: Video, info: PlayerInfo, ladder: [VideoFormat], hdr: Bool) async -> Bool {
+        let label = hdr ? "WebSession/VP9 HDR" : "WebSession/VP9"
+        // The audio rendition is played from MP4 byte ranges (DASHToHLS reads MP4 indexes only).
+        let audio = info.formats.filter { $0.mimeType.hasPrefix("audio/mp4") && $0.url != nil }
+            .max { ($0.bitrate ?? 0) < ($1.bitrate ?? 0) }
+        guard ladder.contains(where: { $0.height > 1080 }), let audio else {
+            webSessionLog.notice("[\(label, privacy: .public)] no VP9 above 1080p or no MP4 audio")
+            return false
+        }
+        guard
+            let server = await WebMRemuxServer.prepare(
+                ladder: ladder, hdr: hdr, audio: audio, userAgent: InnerTubeClients.MWEB.userAgent),
+            let playlistURL = await server.start(atSeconds: savedPositionToRestore)
+        else {
+            webSessionLog.error("[\(label, privacy: .public)] server could not start")
+            return false
+        }
+        webMRemuxServer?.stop()
+        webMRemuxServer = server
+        playerInfo = info
+        availableCaptions = info.captionTracks
+        autoApplyCaptionPreference(tracks: info.captionTracks)
+        lastAttemptedStreamURL = ladder.first?.url
+        // The playlist already starts at the resume position (EXT-X-START); no seek afterwards.
+        let resumePosition = savedPositionToRestore
+        savedPositionToRestore = nil
+        let item = AVPlayerItem(url: playlistURL)
+        if await playPreparedItem(item, for: video, info: info, label: label) {
+            availableFormats = ladder.filter { format in server.variants.contains { $0.format.height == format.height }
+            }
+            return true
+        }
+        server.stop()
+        webMRemuxServer = nil
+        savedPositionToRestore = resumePosition
+        webSessionLog.notice("[\(label, privacy: .public)] failed")
+        return false
+    }
+    #endif
+
     /// An asset for `manifest` that loads its playlists through `YTHLSProxyLoader` with the
     /// solved `n`, or nil when the current stream didn't come through the web session.
     func webSessionAsset(for manifest: URL) -> AVURLAsset? {

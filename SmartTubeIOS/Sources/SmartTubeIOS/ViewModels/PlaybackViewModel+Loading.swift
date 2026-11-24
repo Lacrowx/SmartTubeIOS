@@ -181,6 +181,8 @@ extension PlaybackViewModel {
         #endif
         qualityManager.reset()
         av1PlaylistLoader = nil
+        webMRemuxServer?.stop()
+        webMRemuxServer = nil
         phase2Task?.cancel()
         phase2Task = nil
         prefetchTask?.cancel()

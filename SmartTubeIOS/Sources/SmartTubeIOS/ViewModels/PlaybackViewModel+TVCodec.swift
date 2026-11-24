@@ -50,7 +50,9 @@ extension PlaybackViewModel {
         guard !order.isEmpty else { return false }
         // One VisionOS request serves both AV1 and VP9; reuse the one loadAsync started.
         let result: Result<PlayerInfo, any Error>
-        if let fetch = tvCodecInfoFetch, fetch.videoId == video.id {
+        if Self.forcesWebMRemux {
+            result = .failure(APIError.ipBlocked("simulated for testing"))
+        } else if let fetch = tvCodecInfoFetch, fetch.videoId == video.id {
             result = await fetch.task.value
         } else {
             result = await Self.visionOSInfo(api: api, videoId: video.id)
@@ -78,16 +80,23 @@ extension PlaybackViewModel {
         return false
     }
 
-    /// Bot check: the VisionOS request is refused, so there is no VP9 HLS stream, but the web
-    /// session's MWEB formats carry the AV1 ladder. Used for the VP9 setting too when the device
-    /// decodes AV1 (MWEB's VP9 files are WebM, which DASHToHLS doesn't read).
+    /// Bot check: the VisionOS request is refused, so there is no VP9 HLS stream. The web
+    /// session's MWEB formats have AV1 (played from MP4 byte ranges), used for the VP9 setting
+    /// too when the device decodes AV1, and VP9 as WebM, which `WebMRemuxServer` rewraps.
     private func tryUHDThroughWebSession(video: Video, order: [AppSettings.TVVideoCodec]) async -> Bool {
-        guard !order.isEmpty, HLSPlaybackPolicy.av1DecoderAvailable else { return false }
+        guard !order.isEmpty else { return false }
         guard let webInfo = await adaptivePlayerInfoThroughWebSession(videoId: video.id) else {
-            playerLog.notice("[VisionOS/AV1] blocked and no web-session formats — falling back")
+            playerLog.notice("[VisionOS] blocked and no web-session formats — falling back")
             return false
         }
-        return await tryAV1UHDPlayback(video: video, info: webInfo)
+        if HLSPlaybackPolicy.av1DecoderAvailable, !Self.forcesWebMRemux,
+            await tryAV1UHDPlayback(video: video, info: webInfo)
+        {
+            return true
+        }
+        if order.contains(.vp9), await tryWebMRemuxPlayback(video: video, info: webInfo) { return true }
+        playerLog.notice("[VisionOS] blocked — falling back")
+        return false
     }
 
     /// VP9: YouTube's VisionOS HLS stream; attemptURL's HLS policy keeps its VP9 variants

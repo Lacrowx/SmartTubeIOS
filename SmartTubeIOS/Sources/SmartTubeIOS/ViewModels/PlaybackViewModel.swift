@@ -270,6 +270,9 @@ public final class PlaybackViewModel {
     /// Retains the proxy loader of a web-session HLS stream (AVAssetResourceLoader holds its
     /// delegate weakly).
     @ObservationIgnored var webSessionHLSLoader: YTHLSProxyLoader?
+    /// Serves the current video's VP9 WebM files as HLS when they came through the web session
+    /// (`PlaybackViewModel+WebSession.swift`); stopped on every load.
+    @ObservationIgnored var webMRemuxServer: WebMRemuxServer?
     /// Counts exhaustive retry cycles (0 = no retry yet). Set by exhaustiveRetry(video:originalError:).
     var retryAttempts: Int = 0
     /// The stream type that produced the current AVPlayerItem, set by each successful load path.
