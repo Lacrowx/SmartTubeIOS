@@ -381,6 +381,8 @@ extension PlaybackViewModel {
         needsQuickStartup = true
         webSessionNChallenge = nil
         webSessionHLSLoader = nil
+        webSessionTallestFormat = nil
+        webSessionAdaptive = nil
         // Note: isLoading = false is set in the AVPlayerItem .readyToPlay observer so the
         // spinner stays visible until the first frame is actually ready. It was previously
         // cleared after player.rate was set, which dismissed the spinner before buffering
@@ -653,6 +655,9 @@ extension PlaybackViewModel {
                 info = coalescedInfo
             } else {
                 do {
+                    #if os(tvOS)
+                    if Self.forcesWebMRemux { throw APIError.ipBlocked("simulated for testing") }
+                    #endif
                     info = try await api.fetchPlayerInfo(videoId: video.id)
                 } catch {
                     if case APIError.ipBlocked(let reason) = error {

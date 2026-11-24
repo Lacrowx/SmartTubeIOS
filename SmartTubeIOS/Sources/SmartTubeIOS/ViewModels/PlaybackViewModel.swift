@@ -270,6 +270,12 @@ public final class PlaybackViewModel {
     /// Retains the proxy loader of a web-session HLS stream (AVAssetResourceLoader holds its
     /// delegate weakly).
     @ObservationIgnored var webSessionHLSLoader: YTHLSProxyLoader?
+    /// Tallest video format of the current video (by its shorter side, so portrait videos
+    /// count right), known when its stream came through the web session; reset on every load.
+    @ObservationIgnored var webSessionTallestFormat: Int?
+    /// The web session's MWEB formats for one video (nil inside: the request failed), so the
+    /// AV1 and VP9 paths share one request; reset on every load.
+    @ObservationIgnored var webSessionAdaptive: (videoId: String, info: PlayerInfo?)?
     /// Serves the current video's VP9 WebM files as HLS when they came through the web session
     /// (`PlaybackViewModel+WebSession.swift`); stopped on every load.
     @ObservationIgnored var webMRemuxServer: WebMRemuxServer?

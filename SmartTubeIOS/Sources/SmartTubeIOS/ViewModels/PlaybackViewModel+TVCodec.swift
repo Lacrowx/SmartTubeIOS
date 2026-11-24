@@ -41,6 +41,12 @@ extension PlaybackViewModel {
     /// path, which tops out at 1080p H.264 on Apple TV. Returns `false` to fall through.
     /// Codecs the device can't decode are skipped: AV1 falls back to VP9, VP9 to the regular path.
     func tryTVPreferredCodecPlayback(video: Video) async -> Bool {
+        // Blocked network and the video tops out at 1080p: the UHD paths could only add
+        // requests (bot-checked VisionOS, MWEB) before falling back to the same stream.
+        if let tallest = webSessionTallestFormat, tallest <= 1080 {
+            playerLog.notice("[VisionOS] web session: \(video.id) has nothing above \(tallest)p — skipping UHD paths")
+            return false
+        }
         let choice = settings.tvVideoCodec
         let order = tvCodecPlaybackOrder
         if order.first != choice, choice != .h264 {

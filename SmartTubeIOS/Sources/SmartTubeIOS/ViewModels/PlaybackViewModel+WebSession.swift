@@ -30,6 +30,8 @@ extension PlaybackViewModel {
                 return nil
             }
             webSessionNChallenge = try await WebSessionHLS.prepare(manifest: manifest, player: player)
+            webSessionTallestFormat = info.formats.filter { $0.mimeType.hasPrefix("video/") }
+                .map { $0.width > 0 ? min($0.width, $0.height) : $0.height }.max()
             webSessionLog.notice("web session: stream ready for \(videoId, privacy: .public)")
             return info
         } catch {
@@ -42,6 +44,13 @@ extension PlaybackViewModel {
     /// solved, for the tvOS AV1 UHD path (the WEB response's AV1/VP9 formats are SABR-only).
     /// Nil without a web session or when the files can't be prepared.
     func adaptivePlayerInfoThroughWebSession(videoId: String) async -> PlayerInfo? {
+        if let cached = webSessionAdaptive, cached.videoId == videoId { return cached.info }
+        let info = await fetchAdaptivePlayerInfoThroughWebSession(videoId: videoId)
+        webSessionAdaptive = (videoId, info)
+        return info
+    }
+
+    private func fetchAdaptivePlayerInfoThroughWebSession(videoId: String) async -> PlayerInfo? {
         guard let sapisid = WebSession.storedSAPISID() else { return nil }
         await api.setSAPISID(sapisid)
         do {
@@ -63,8 +72,9 @@ extension PlaybackViewModel {
     }
 
     #if os(tvOS)
-    /// Testing only: `--uitesting-force-vp9-remux` treats the VP9 path's VisionOS request as
-    /// bot-checked and skips AV1, so the WebM path runs on any network.
+    /// Testing only: `--uitesting-force-vp9-remux` treats the player request and the VP9
+    /// path's VisionOS request as bot-checked and skips AV1, so the blocked-network flow and
+    /// the WebM path run on any network.
     static var forcesWebMRemux: Bool {
         #if DEBUG
         ProcessInfo.processInfo.arguments.contains("--uitesting-force-vp9-remux")
