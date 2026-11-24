@@ -311,22 +311,30 @@ struct VideoRowSection: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: videoGridRowSpacing) {
+            #if os(tvOS)
+            // Lazy on tvOS: an eager HStack builds every card in the shelf at once, and each
+            // card starts a thumbnail download and a prefetch, crowding out the visible ones.
+            LazyHStack(alignment: .top, spacing: videoGridRowSpacing) {
                 ForEach(videos) { video in
-                    #if os(tvOS)
                     VideoCardView(video: video, compact: false, onSelect: { onSelect(video) })
                         .frame(width: 360)
                         .accessibilityIdentifier("video.card.\(video.id)")
-                    #else
-                    VideoCardView(video: video, compact: false)
-                        .frame(width: 220)
-                        .accessibilityIdentifier("video.card.\(video.id)")
-                        .onTapGesture { onSelect(video) }
-                    #endif
                 }
             }
             .padding(.horizontal)
             .padding(.vertical, 4)
+            #else
+            HStack(alignment: .top, spacing: videoGridRowSpacing) {
+                ForEach(videos) { video in
+                    VideoCardView(video: video, compact: false)
+                        .frame(width: 220)
+                        .accessibilityIdentifier("video.card.\(video.id)")
+                        .onTapGesture { onSelect(video) }
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 4)
+            #endif
         }
         #if os(tvOS)
         .focusSection()
