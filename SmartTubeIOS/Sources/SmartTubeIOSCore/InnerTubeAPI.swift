@@ -24,6 +24,9 @@ public actor InnerTubeAPI {
 
     let session: URLSession
     var visitorData: String?
+    /// The `visitorData` the last VisionOS watch-page seed produced. While it still equals
+    /// `visitorData`, VisionOS requests reuse that session instead of loading the page again.
+    var visionOSSeededVisitorData: String?
     var authToken: String?
     /// SAPISID cookie value from YouTube.com web session (set via OAuthLogin/MergeSession).
     /// Used by postWebCreator to compute SAPISIDHASH for WEB_CREATOR requests on www.youtube.com.

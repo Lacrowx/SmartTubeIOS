@@ -75,6 +75,7 @@ extension InnerTubeAPI {
 
         if let value = extractYouTubeVisitorData(from: html) {
             visitorData = value
+            visionOSSeededVisitorData = value
             tubeLog.notice("VisionOS session seeded (visitorData len=\(value.count, privacy: .public))")
             return
         }

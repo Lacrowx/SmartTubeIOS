@@ -147,8 +147,23 @@ extension InnerTubeAPI {
     }
 
     /// Fetches player data using current yt-dlp's primary JS-less visionOS client.
+    /// The watch-page seed downloads a full HTML page, so a seeded session is reused until
+    /// `visitorData` changes (network switch, browse response) or YouTube rejects it.
     public func fetchPlayerInfoVisionOS(videoId: String) async throws -> PlayerInfo {
-        await seedVisionOSSession(videoId: videoId)
+        let reusingSession = visitorData != nil && visitorData == visionOSSeededVisitorData
+        if !reusingSession {
+            await seedVisionOSSession(videoId: videoId)
+        }
+        do {
+            return try await requestPlayerInfoVisionOS(videoId: videoId)
+        } catch let error where reusingSession && !Task.isCancelled {
+            tubeLog.notice("VisionOS reused session failed (\(error.localizedDescription)) — reseeding")
+            await seedVisionOSSession(videoId: videoId)
+            return try await requestPlayerInfoVisionOS(videoId: videoId)
+        }
+    }
+
+    private func requestPlayerInfoVisionOS(videoId: String) async throws -> PlayerInfo {
         var clientFields = (visionOSClientContext["client"] as? [String: Any]) ?? [:]
         if let vd = visitorData { clientFields["visitorData"] = vd }
         var body = makeBody(client: ["client": clientFields])
