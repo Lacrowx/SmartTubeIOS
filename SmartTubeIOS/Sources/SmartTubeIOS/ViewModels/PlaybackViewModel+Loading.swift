@@ -802,7 +802,8 @@ extension PlaybackViewModel {
                     guard let self, !Task.isCancelled, !variantURLs.isEmpty else { return }
                     self.hlsVariantURLs = variantURLs
                     let beforeCount = self.availableFormats.count
-                    self.availableFormats = self.availableFormats.filter { variantURLs.keys.contains($0.height) }
+                    self.availableFormats = PlaybackQualityManager.hlsQualityOptions(
+                        playable: self.availableFormats, response: info.formats, variants: variantURLs)
                     playerLog.notice(
                         "HLS variants (bg): \(variantURLs.keys.sorted().reversed()) — filtered quality picker \(beforeCount) → \(self.availableFormats.count) options"
                     )

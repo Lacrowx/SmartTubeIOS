@@ -504,6 +504,25 @@ final class PlaybackQualityManager {
     /// as separate picker entries — the picker label includes the codec ("1080p H.264",
     /// "1080p AV1"). Selecting a specific entry uses that format's URL directly, so the
     /// user gets exactly the codec they tapped.
+    /// Quality options for an HLS stream once its manifest's variant heights are known:
+    /// normally the playable formats the manifest also offers. When the response's video
+    /// formats carry no URLs (SABR-only, as through the web session) they say nothing about
+    /// the stream, so the options are the manifest's own heights, highest first, labelled
+    /// with YouTube's tier (a 2:1 video's 1920×960 variant is "1080p").
+    nonisolated static func hlsQualityOptions(
+        playable: [VideoFormat], response: [VideoFormat], variants: [Int: URL]
+    ) -> [VideoFormat] {
+        let sabrOnly = response.contains { $0.mimeType.hasPrefix("video/") && $0.url == nil }
+        guard sabrOnly else { return playable.filter { variants.keys.contains($0.height) } }
+        let tiers = AppSettings.VideoQuality.allCases.compactMap(\.maxHeight)
+        return variants.keys.sorted(by: >).map { height in
+            let tier = tiers.filter { $0 >= height }.min() ?? height
+            return VideoFormat(
+                label: "\(tier)p", width: 0, height: height, fps: 30, mimeType: "video/mp4",
+                url: variants[height])
+        }
+    }
+
     nonisolated static func deduplicatedVideoFormats(_ formats: [VideoFormat]) -> [VideoFormat] {
         let candidates = formats.filter {
             $0.url != nil && $0.height > 0 && $0.mimeType.hasPrefix("video/mp4")

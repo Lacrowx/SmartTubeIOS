@@ -17,7 +17,8 @@ extension PlaybackViewModel {
             qualityLog.notice("[quality] selectFormat → Auto (clearing selectedFormat)")
         }
         // The tvOS AV1 playlist holds every AV1 height: cap it in place rather than reload.
-        let inPlaceItem = av1PlaylistLoader != nil ? player.currentItem : nil
+        // So does the web session's HLS master, and a reload would lose its `n`-solving proxy.
+        let inPlaceItem = av1PlaylistLoader != nil || webSessionHLSLoader != nil ? player.currentItem : nil
         qualityManager.selectFormat(format, inPlace: inPlaceItem)
         // Refresh Stats for Nerds immediately so the overlay shows the new quality
         // without waiting for the next periodic-observer tick (which may not fire
