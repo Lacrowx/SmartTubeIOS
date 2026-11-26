@@ -2470,18 +2470,10 @@ extension PlaybackViewModel {
             playerLog.error("❌ [webView/HLS] failed to build proxy URL for master")
             return false
         }
-        // Determine the initial content ID: if the user has a saved language preference that
-        // matches one of the HLS variant tracks, start with that language; otherwise nil (original).
+        // Initial content ID: the track loadHLSVariantTracks auto-selected above (the original).
         // Use contentID (not id) so the synthetic "Original" entry (id="yt-original-audio",
         // contentID=nil) correctly maps to nil → proxy keeps no-content-ID variants.
-        let initialContentID: String?
-        if let pref = settings.preferredAudioLanguage,
-            let preferred = hlsLanguageTracks.first(where: { $0.languageCode == pref })
-        {
-            initialContentID = preferred.contentID
-        } else {
-            initialContentID = nil
-        }
+        let initialContentID = audioManager.selectedAudioTrack?.contentID
         let langDisplay = initialContentID ?? "original"
         // fix20: Use the caller-supplied poToken (captured before wkHLSEarlyTask clears
         // extractedPoToken). With a non-nil poToken the proxy rewrites variant playlist URLs

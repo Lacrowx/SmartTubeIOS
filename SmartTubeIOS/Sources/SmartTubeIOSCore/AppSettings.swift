@@ -137,7 +137,8 @@ public struct AppSettings: Codable {
 
     // MARK: Audio
     /// BCP 47 language code of the user's preferred audio track (e.g. "es", "fr", "pt-BR").
-    /// `nil` means use the HLS default. Set implicitly when the user picks a track in the player.
+    /// Only a fallback for videos with no track marked original: playback always starts in the
+    /// original language. Set in Settings; picking a track in the player does not change it.
     public var preferredAudioLanguage: String?
 
     /// BCP 47 language code of the user's last selected caption track (e.g. "en", "es").

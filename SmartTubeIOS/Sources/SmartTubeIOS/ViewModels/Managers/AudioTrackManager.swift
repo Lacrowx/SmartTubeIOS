@@ -56,12 +56,11 @@ final class AudioTrackManager {
     }
 
     /// Switches to `track`, or resets to the HLS default when `nil`.
-    /// Persists the language code in `AppSettings`.
+    /// Applies to the current video only: every video starts in its original language.
     /// For the YT-EXT-AUDIO-CONTENT-ID HLS path (no audioSelectionGroup), fires
     /// onHLSLanguageChange so the caller can reload the AVPlayerItem with the right language.
     func selectAudioTrack(_ track: AudioTrack?) {
         selectedAudioTrack = track
-        delegate?.settings.preferredAudioLanguage = track?.languageCode
         if let group = audioSelectionGroup {
             guard let item = player.currentItem else { return }
             if let track, let option = audioOptionsByID[track.id] {
@@ -77,21 +76,12 @@ final class AudioTrackManager {
     }
 
     /// Populates available audio tracks from YouTube's YT-EXT-AUDIO-CONTENT-ID HLS manifest
-    /// format (not #EXT-X-MEDIA groups). Auto-applies the user's saved language preference.
+    /// format (not #EXT-X-MEDIA groups). Selects the original track (see `autoSelect`).
     /// Does NOT set audioSelectionGroup — track switching is handled via onHLSLanguageChange.
     func loadHLSVariantTracks(_ tracks: [AudioTrack]) {
         guard !tracks.isEmpty else { return }
         availableAudioTracks = tracks
-        let preferred = delegate?.settings.preferredAudioLanguage
-        if let pref = preferred,
-            let preferredTrack = tracks.first(where: { $0.languageCode == pref })
-        {
-            selectedAudioTrack = preferredTrack
-        } else if let originalTrack = tracks.first(where: { $0.isOriginal }) {
-            selectedAudioTrack = originalTrack
-        } else {
-            selectedAudioTrack = tracks.first
-        }
+        selectedAudioTrack = autoSelect(from: tracks)
         playerLog.notice(
             "AudioTrackManager: loaded \(tracks.count) HLS variant track(s) — selected: \(selectedAudioTrack?.name ?? "nil")"
         )
@@ -241,33 +231,7 @@ final class AudioTrackManager {
 
             self.availableAudioTracks = tracks
 
-            let preferred = self.delegate?.settings.preferredAudioLanguage
-            let autoSelect: AudioTrack? = {
-                if let lang = preferred {
-                    if lang == "original" {
-                        return tracks.first(where: \.isOriginal) ?? tracks.first
-                    }
-                    if let exact = tracks.first(where: { $0.languageCode == lang }) { return exact }
-                    let base = lang.components(separatedBy: "-").first ?? lang
-                    return tracks.first(where: { $0.languageCode.hasPrefix(base) })
-                        ?? tracks.first(where: \.isOriginal)
-                }
-                for deviceLang in Locale.preferredLanguages {
-                    if let exact = tracks.first(where: { $0.languageCode == deviceLang }) { return exact }
-                    let base = deviceLang.components(separatedBy: "-").first ?? deviceLang
-                    if let match = tracks.first(where: { $0.languageCode.hasPrefix(base) }) { return match }
-                }
-                if let original = tracks.first(where: \.isOriginal) { return original }
-                let englishPrefixes = ["en-", "en_"]
-                if let english = tracks.first(where: { $0.languageCode == "en" })
-                    ?? tracks.first(where: { lang in
-                        englishPrefixes.contains(where: { lang.languageCode.hasPrefix($0) })
-                    })
-                {
-                    return english
-                }
-                return tracks.first
-            }()
+            let autoSelect = self.autoSelect(from: tracks)
             self.selectedAudioTrack = autoSelect
             if let autoSelect, let option = optionMap[autoSelect.id] {
                 item.select(option, in: group)
@@ -276,5 +240,9 @@ final class AudioTrackManager {
                 "Audio tracks: \(tracks.map(\.name).joined(separator: ", ")) — auto-selected: \(autoSelect?.name ?? "default")"
             )
         }
+    }
+
+    private func autoSelect(from tracks: [AudioTrack]) -> AudioTrack? {
+        AudioTrack.autoSelect(from: tracks, preferredLanguage: delegate?.settings.preferredAudioLanguage)
     }
 }

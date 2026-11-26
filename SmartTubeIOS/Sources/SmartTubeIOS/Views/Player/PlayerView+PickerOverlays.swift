@@ -436,7 +436,7 @@ extension PlayerView {
                         .prefersDefaultFocus(in: audioTrackPickerNamespace)
                         #endif
                         Divider()
-                        ForEach(vm.availableAudioTracks) { track in
+                        ForEach(vm.availableAudioTracks.sortedForPicker()) { track in
                             Button {
                                 vm.selectAudioTrack(track)
                                 showAudioTrackPicker = false
