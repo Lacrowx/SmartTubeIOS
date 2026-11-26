@@ -30,8 +30,7 @@ extension PlaybackViewModel {
                 return nil
             }
             webSessionNChallenge = try await WebSessionHLS.prepare(manifest: manifest, player: player)
-            webSessionTallestFormat = info.formats.filter { $0.mimeType.hasPrefix("video/") }
-                .map { $0.width > 0 ? min($0.width, $0.height) : $0.height }.max()
+            webSessionTallestFormat = info.formats.filter { $0.mimeType.hasPrefix("video/") }.map(\.nominalHeight).max()
             webSessionLog.notice("web session: stream ready for \(videoId, privacy: .public)")
             return info
         } catch {
@@ -99,7 +98,7 @@ extension PlaybackViewModel {
     func tryWebMRemuxPlayback(video: Video, info: PlayerInfo) async -> Bool {
         let cap = effectiveQuality.maxHeight
         let hdrLadder = info.vp9VideoLadder(hdr: true, maximumHeight: cap)
-        let wantsHDR = AVPlayer.eligibleForHDRPlayback && hdrLadder.contains { $0.height > 1080 }
+        let wantsHDR = AVPlayer.eligibleForHDRPlayback && hdrLadder.contains { $0.nominalHeight > 1080 }
         if wantsHDR, await playWebM(video: video, info: info, ladder: hdrLadder, hdr: true) { return true }
         return await playWebM(
             video: video, info: info, ladder: info.vp9VideoLadder(hdr: false, maximumHeight: cap), hdr: false)
@@ -110,7 +109,7 @@ extension PlaybackViewModel {
         // The audio rendition is played from MP4 byte ranges (DASHToHLS reads MP4 indexes only).
         let audio = info.formats.filter { $0.mimeType.hasPrefix("audio/mp4") && $0.url != nil }
             .max { ($0.bitrate ?? 0) < ($1.bitrate ?? 0) }
-        guard ladder.contains(where: { $0.height > 1080 }), let audio else {
+        guard ladder.contains(where: { $0.nominalHeight > 1080 }), let audio else {
             webSessionLog.notice("[\(label, privacy: .public)] no VP9 above 1080p or no MP4 audio")
             return false
         }

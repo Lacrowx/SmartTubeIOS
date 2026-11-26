@@ -127,7 +127,7 @@ extension PlaybackViewModel {
         let ladder = info.av1VideoLadder(maximumHeight: cap).filter { format in
             hdrOK || DASHToHLS.codecs(fromMimeType: format.mimeType).map(DASHToHLS.videoRange(fromCodecs:)) == "SDR"
         }
-        guard ladder.contains(where: { $0.height > 1080 }),
+        guard ladder.contains(where: { $0.nominalHeight > 1080 }),
             let audioURL = info.bestAdaptiveAudioURL,
             let audio = info.formats.first(where: { $0.url == audioURL }),
             let audioCodec = DASHToHLS.codecs(fromMimeType: audio.mimeType)
@@ -164,7 +164,10 @@ extension PlaybackViewModel {
                     width: format.width > 0 ? format.width : format.height * 16 / 9, height: format.height,
                     frameRate: format.fps, peakBitrate: index.peakBitrate, averageBitrate: index.averageBitrate))
         }
-        guard variants.contains(where: { $0.height > 1080 }) else {
+        let indexedUHD = ladder.contains { format in
+            format.nominalHeight > 1080 && format.url.map { indexes[$0] != nil } == true
+        }
+        guard indexedUHD else {
             playerLog.notice("[VisionOS/AV1] UHD index unavailable — falling back")
             return false
         }

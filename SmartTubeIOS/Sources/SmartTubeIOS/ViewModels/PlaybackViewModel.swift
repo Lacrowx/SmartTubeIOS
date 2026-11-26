@@ -270,7 +270,7 @@ public final class PlaybackViewModel {
     /// Retains the proxy loader of a web-session HLS stream (AVAssetResourceLoader holds its
     /// delegate weakly).
     @ObservationIgnored var webSessionHLSLoader: YTHLSProxyLoader?
-    /// Tallest video format of the current video (by its shorter side, so portrait videos
+    /// Highest quality tier of the current video (YouTube's label, so portrait and wide videos
     /// count right), known when its stream came through the web session; reset on every load.
     @ObservationIgnored var webSessionTallestFormat: Int?
     /// The web session's MWEB formats for one video (nil inside: the request failed), so the
