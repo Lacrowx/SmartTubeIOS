@@ -34,6 +34,11 @@ public final class SettingsStore {
     /// PlayerRouter (the only reader) is `#if os(iOS)`.
     public var useTOSPlayerOnIOS: Bool = true
 
+    /// UI testing only: the tvOS UI tests written for the classic player overlay opt back
+    /// into it with `--uitesting-tv-classic-player`. Never persisted, so it can't leak into
+    /// the next run (unlike writing `settings.tvClassicPlayer`).
+    public var tvClassicPlayerForTesting: Bool = false
+
     private static let key = "smarttube_app_settings"
 
     public init() {
@@ -57,6 +62,9 @@ public final class SettingsStore {
         }
         if ProcessInfo.processInfo.arguments.contains("--uitesting-hide-shorts") {
             self.settings.hideShorts = true
+        }
+        if ProcessInfo.processInfo.arguments.contains("--uitesting-tv-classic-player") {
+            self.tvClassicPlayerForTesting = true
         }
         if ProcessInfo.processInfo.arguments.contains("--uitesting-enable-tos-player-on-ios") {
             self.useTOSPlayerOnIOS = true

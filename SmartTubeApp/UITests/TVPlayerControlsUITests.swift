@@ -27,7 +27,7 @@ final class TVPlayerControlsUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments = ["--uitesting-open-more-menu"]
+        app.launchArguments = ["--uitesting-open-more-menu", "--uitesting-tv-classic-player"]
         app.launch()
         try openPlayer()
     }
@@ -312,6 +312,154 @@ final class TVPlayerControlsUITests: XCTestCase {
         XCTAssertTrue(
             titleLabel.waitForExistence(timeout: 5),
             "#150 regression: player.titleLabel must still exist after pressing Menu to close description panel")
+    }
+}
+
+// MARK: - TVNativePlayerUITests
+//
+// Apple's player (AVPlayerViewController), the tvOS default. Opens dQw4w9WgXcQ directly (it
+// plays signed out in the Simulator, as an HLS stream) and drives the transport bar with the
+// remote. The app's menus sit next to Apple's Subtitles and Audio buttons.
+//
+// Run against the "Smart Tube" tvOS scheme:
+//   xcodebuild test -workspace SmartTube.xcworkspace -scheme "Smart Tube"
+//     -destination "platform=tvOS Simulator,name=Apple TV 4K (4th generation)"
+//     -only-testing:SmartTubeTVUITests/TVNativePlayerUITests
+
+final class TVNativePlayerUITests: XCTestCase {
+
+    private var app: XCUIApplication!
+    private let remote = XCUIRemote.shared
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        app = XCUIApplication()
+        app.launchArguments = ["--uitesting-deeplink-video=dQw4w9WgXcQ"]
+        app.launch()
+    }
+
+    override func tearDownWithError() throws {
+        app = nil
+    }
+
+    // MARK: - Helpers
+
+    /// A transport-bar button or menu row, by its title.
+    private func cell(_ label: String) -> XCUIElement {
+        app.cells.matching(labelPredicate(label)).firstMatch
+    }
+
+    /// The same, only while it has focus. AVKit lists each button and row twice in the
+    /// accessibility tree, and only one copy reports focus.
+    private func focusedCell(_ label: String) -> XCUIElement {
+        app.cells.matching(
+            NSCompoundPredicate(andPredicateWithSubpredicates: [
+                labelPredicate(label), NSPredicate(format: "hasFocus == true"),
+            ])
+        ).firstMatch
+    }
+
+    private func labelPredicate(_ label: String) -> NSPredicate {
+        NSPredicate(format: "label == %@ OR label ENDSWITH %@ OR label BEGINSWITH %@", label, ", \(label)", "\(label),")
+    }
+
+    /// Presses `button` until the cell titled `label` has focus, at most `limit` times.
+    private func press(_ button: XCUIRemote.Button, untilFocused label: String, limit: Int = 6) -> Bool {
+        let target = focusedCell(label)
+        for _ in 0..<limit {
+            if target.exists { return true }
+            remote.press(button)
+            if target.waitForExistence(timeout: 1.5) { return true }
+        }
+        return target.exists
+    }
+
+    /// Whichever transport-bar menu button has focus.
+    private var focusedMenuButton: XCUIElement {
+        app.cells.matching(
+            NSPredicate(format: "label IN %@ AND hasFocus == true", ["Quality", "More", "Subtitles", "Audio"])
+        ).firstMatch
+    }
+
+    /// Waits for the video's player info, shows the transport bar and moves focus onto the
+    /// app's menu buttons.
+    private func showMenuButtons() throws {
+        let title = app.staticTexts["player.titleLabel"].firstMatch
+        let loaded = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label != ''"), object: title)
+        guard XCTWaiter().wait(for: [loaded], timeout: 45) == .completed else {
+            try captureAndSkip("The video did not load — network unavailable?", in: app)
+        }
+        // AVKit keeps the menu buttons in the accessibility tree while the bar is hidden, so
+        // wait until one of them has focus.
+        for _ in 0..<3 where !focusedMenuButton.exists {
+            remote.press(.select)  // shows the transport bar
+            _ = cell("More").waitForExistence(timeout: 5)
+            remote.press(.up)  // onto the menu buttons
+            _ = focusedMenuButton.waitForExistence(timeout: 3)
+        }
+        guard focusedMenuButton.exists else {
+            try captureAndSkip("The transport bar's menu buttons did not take focus", in: app)
+        }
+    }
+
+    private func openMenu(_ label: String) throws {
+        let button = cell(label)
+        guard button.exists, focusedMenuButton.exists else {
+            captureState("no \(label) button", in: app)
+            XCTFail("The transport bar has no focused menu button or no \(label) button")
+            return
+        }
+        let direction: XCUIRemote.Button = button.frame.minX < focusedMenuButton.frame.minX ? .left : .right
+        XCTAssertTrue(press(direction, untilFocused: label), "Focus did not reach \(label)")
+        remote.press(.select)
+    }
+
+    // MARK: - Tests
+
+    /// The app's Quality and More menus sit next to Apple's Subtitles and Audio buttons.
+    func testTransportBarHasTheAppMenus() throws {
+        try showMenuButtons()
+        XCTAssertTrue(cell("Quality").exists, "Quality menu button missing")
+        XCTAssertTrue(cell("More").exists, "More menu button missing")
+    }
+
+    /// The Quality menu lists the HLS stream's own heights (the response's formats have no URLs).
+    func testQualityMenuListsTheStreamsHeights() throws {
+        try showMenuButtons()
+        try openMenu("Quality")
+        XCTAssertTrue(cell("Auto").waitForExistence(timeout: 5), "Quality menu has no Auto row")
+        for height in ["1080p", "720p", "360p"] {
+            XCTAssertTrue(cell(height).exists, "Quality menu has no \(height) row")
+        }
+    }
+
+    /// Picking a quality marks it as the selected row when the menu opens again.
+    func testPickedQualityIsMarkedSelected() throws {
+        try showMenuButtons()
+        try openMenu("Quality")
+        let row = cell("720p")
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "Quality menu has no 720p row")
+        XCTAssertTrue(press(.down, untilFocused: "720p", limit: 8), "Focus did not reach the 720p row")
+        remote.press(.select)
+        _ = row.waitForNonExistence(timeout: 3)  // the menu closes
+        try showMenuButtons()
+        try openMenu("Quality")
+        let selected = app.cells.matching(
+            NSPredicate(format: "label BEGINSWITH 'selected' AND label CONTAINS '720p'")
+        ).firstMatch
+        XCTAssertTrue(selected.waitForExistence(timeout: 5), "720p is not marked selected")
+    }
+
+    /// More → Go to Channel opens the video's channel page.
+    func testGoToChannelOpensTheChannel() throws {
+        try showMenuButtons()
+        try openMenu("More")
+        let goToChannel = cell("Go to Channel")
+        XCTAssertTrue(goToChannel.waitForExistence(timeout: 5), "More menu has no Go to Channel row")
+        XCTAssertTrue(press(.down, untilFocused: "Go to Channel"), "Focus did not reach Go to Channel")
+        remote.press(.select)
+        let channel = app.descendants(matching: .any).matching(identifier: "channel.view").firstMatch
+        XCTAssertTrue(channel.waitForExistence(timeout: 15), "The channel page did not open")
     }
 }
 #endif

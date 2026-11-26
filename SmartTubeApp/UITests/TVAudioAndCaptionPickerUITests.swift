@@ -25,7 +25,7 @@ final class TVAudioAndCaptionPickerUITests: XCTestCase {
         app = XCUIApplication()
         // --uitesting-open-more-menu navigates from Home to a video and auto-opens
         // the more menu via onAppear, so tests start with the menu already showing.
-        app.launchArguments = ["--uitesting-open-more-menu"]
+        app.launchArguments = ["--uitesting-open-more-menu", "--uitesting-tv-classic-player"]
         app.launch()
     }
 

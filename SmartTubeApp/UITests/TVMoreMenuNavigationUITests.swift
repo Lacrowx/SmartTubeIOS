@@ -19,7 +19,7 @@ final class TVMoreMenuNavigationUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments = ["--uitesting-open-more-menu"]
+        app.launchArguments = ["--uitesting-open-more-menu", "--uitesting-tv-classic-player"]
         app.launch()
     }
 

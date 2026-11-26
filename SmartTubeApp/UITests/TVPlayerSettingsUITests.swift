@@ -34,7 +34,7 @@ final class TVPlayerSettingsUITests: XCTestCase {
         // Default launch: open more menu automatically so tests verify focus routing.
         // Individual tests may call launchApp(args:) before any interaction if they
         // need a different set of launch arguments.
-        app.launchArguments = ["--uitesting-open-more-menu"]
+        app.launchArguments = ["--uitesting-open-more-menu", "--uitesting-tv-classic-player"]
         app.launch()
     }
 
@@ -237,7 +237,7 @@ final class TVPlayerSettingsUITests: XCTestCase {
     /// testPlaybackSpeedPickerOpensFromMoreMenu).
     func testSleepTimerPickerOpenableFromMoreMenu() throws {
         // Re-launch with the sleep-timer-specific arg.
-        app.launchArguments = ["--uitesting-open-sleep-timer-picker"]
+        app.launchArguments = ["--uitesting-open-sleep-timer-picker", "--uitesting-tv-classic-player"]
         app.launch()
 
         // Navigate to the player (same as other tests).

@@ -19,6 +19,8 @@ final class TVFocusChainUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
+        // Written for the classic player overlay (player.moreButton, player.playPauseButton).
+        app.launchArguments = ["--uitesting-tv-classic-player"]
         app.launch()
     }
 

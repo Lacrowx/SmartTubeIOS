@@ -400,7 +400,11 @@ struct MainTVTabView: View {
             }
         }
         .sheet(isPresented: $showPairingForTesting) { WebSessionPairingView() }
-        .fullScreenCover(item: $videoForTesting) { video in PlayerView(video: video, api: api) }
+        // In its own NavigationStack (a separate presentation, not nested) so the player can
+        // push the channel page, as it does from the feed.
+        .fullScreenCover(item: $videoForTesting) { video in
+            NavigationStack { PlayerView(video: video, api: api) }
+        }
         #endif
     }
 
