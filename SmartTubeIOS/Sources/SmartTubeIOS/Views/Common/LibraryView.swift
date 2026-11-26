@@ -92,20 +92,8 @@ public struct LibraryView: View {
                     } label: {
                         Text(sec.rawValue)
                             .font(.headline)
-                            .padding(.horizontal, 24)
-                            .padding(.vertical, 12)
-                            .background(
-                                (isSelected || focusedSection == sec) ? Color.primary : Color.secondary.opacity(0.15),
-                                in: Capsule()
-                            )
-                            .foregroundStyle(
-                                (isSelected || focusedSection == sec) ? Color(white: 0) : Color.primary
-                            )
                     }
-                    .buttonStyle(.borderless)
-                    .scaleEffect(focusedSection == sec ? 1.12 : 1.0)
-                    .animation(.easeInOut(duration: 0.15), value: focusedSection)
-                    .animation(.easeInOut(duration: 0.15), value: selectedSection)
+                    .buttonStyle(.tvChip(isSelected: isSelected))
                     .accessibilityAddTraits(isSelected ? [.isSelected] : [])
                     .accessibilityIdentifier("library.chip.\(sec.rawValue.lowercased())")
                     .focused($focusedSection, equals: sec)
@@ -113,7 +101,6 @@ public struct LibraryView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(.ultraThinMaterial)
             .focusSection()
             .defaultFocus($focusedSection, selectedSection)
             .accessibilityElement(children: .contain)
@@ -304,7 +291,7 @@ public struct LibraryView: View {
                 Button("Search") {
                     NotificationCenter.default.post(name: .navigateToSearch, object: nil)
                 }
-                .buttonStyle(.borderedProminent)
+                .primaryActionButtonStyle()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -331,7 +318,7 @@ public struct LibraryView: View {
             NavigationLink("Sign In") {
                 SignInView()
             }
-            .buttonStyle(.borderedProminent)
+            .primaryActionButtonStyle()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

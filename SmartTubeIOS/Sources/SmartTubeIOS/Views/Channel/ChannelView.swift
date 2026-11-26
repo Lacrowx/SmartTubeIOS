@@ -163,7 +163,8 @@ public struct ChannelView: View {
             if compact {
                 LazyVStack(spacing: 0) {
                     ForEach(videos) { video in
-                        VideoCardView(video: video, compact: true)
+                        // onSelect is the tvOS card button's action; iOS uses the tap gesture.
+                        VideoCardView(video: video, compact: true, onSelect: { selectedVideo = video })
                             .padding(.horizontal)
                             .padding(.vertical, 6)
                             .accessibilityIdentifier("video.card.\(video.id)")
@@ -236,7 +237,7 @@ public struct ChannelView: View {
         let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
         return LazyVGrid(columns: columns, spacing: 8) {
             ForEach(videos) { video in
-                VideoCardView(video: video)
+                VideoCardView(video: video, onSelect: { selectShort(video, from: videos) })
                     .aspectRatio(9 / 16, contentMode: .fit)
                     .onTapGesture { selectShort(video, from: videos) }
             }
@@ -295,7 +296,7 @@ public struct ChannelView: View {
                         systemImage: isFollowedLocally ? "bell.slash" : "bell"
                     )
                 }
-                .buttonStyle(.bordered)
+                .secondaryActionButtonStyle()
                 .accessibilityIdentifier("channel.followButton")
             }
         }

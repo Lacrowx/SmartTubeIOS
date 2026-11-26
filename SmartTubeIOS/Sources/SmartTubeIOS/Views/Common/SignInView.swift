@@ -81,6 +81,7 @@ public struct SignInView: View {
                 Label("Cancel", systemImage: "xmark")
                     .font(.headline)
             }
+            .secondaryActionButtonStyle()
             .padding(40)
         }
         .alert("Sign-In Failed", isPresented: $showError, presenting: auth.error) { _ in

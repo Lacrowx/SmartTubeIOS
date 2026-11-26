@@ -73,16 +73,25 @@ public struct VideoCardView: View {
     }
 
     // MARK: - Shared card content (tasks + context menu)
-    // Extracted so the tvOS body can wrap it in a Button (which handles the
+    // Split so the tvOS body can wrap the layout in a Button (which handles the
     // Select button press natively) while iOS continues using the bare view.
 
     private var cardContent: some View {
+        cardBehaviour(layout)
+    }
+
+    @ViewBuilder private var layout: some View {
+        if compact {
+            compactLayout
+        } else {
+            gridLayout
+        }
+    }
+
+    /// Prefetch tasks and the context menu, shared by the iOS card and the tvOS card button.
+    private func cardBehaviour(_ content: some View) -> some View {
         Group {
-            if compact {
-                compactLayout
-            } else {
-                gridLayout
-            }
+            content
         }
         .task {
             localProgress = await VideoStateStore.shared.state(for: video.id)?.watchedFraction
@@ -341,54 +350,40 @@ public struct VideoCardView: View {
 
     public var body: some View {
         #if os(tvOS)
-        // Modifier order is critical on tvOS:
-        //
-        //   cardContent  (contains .contextMenu — handles long press)
-        //       .focusable()          — registers view with focus engine (D-pad navigation)
-        //       .onTapGesture { }     — fires on Select press (outermost → receives event first)
-        //       .focused($isFocused)  — tracks focus state (does not consume events)
-        //
-        // Why this order works:
-        // • .onTapGesture outermost → Select button press fires the action.
-        //   (.focusable() outermost broke Select because the focus engine intercepted
-        //    the primary-action event before the inner tap gesture could see it.)
-        // • .contextMenu innermost, co-located in the same modifier chain as
-        //   .onTapGesture → SwiftUI's gesture arbiter can cancel the pending tap
-        //   recogniser when it detects a long press, so long press shows the menu
-        //   without also playing the video.
-        // • .focusable() between contextMenu and onTapGesture keeps the view in the
-        //   focus engine so D-pad UP/DOWN can reach it.
-        cardContent
-            .focusable()
-            .onTapGesture { onSelect?() }
+        // The system card style gives the focused card its lift, shadow and parallax, and
+        // works in the light theme too. The context menu sits on the button (long press);
+        // inside the label it would never be reached.
+        cardBehaviour(
+            Button {
+                onSelect?()
+            } label: {
+                layout
+            }
+            .buttonStyle(.card)
             .focused($isFocused)
-            .onAppear { feedLog.info("[feed] id=\(self.video.id) title=\(self.video.title)") }
-            .onChange(of: isFocused) { _, newValue in
-                focusLog.info("[VideoCard] isFocused=\(newValue) id=\(self.video.id)")
-                #if canImport(WebKit)
-                if newValue, !video.isShort {
-                    let videoId = video.id
-                    Task(priority: .background) {
-                        await YouTubeWebViewHLSExtractor.preWarm(videoId: videoId)
-                    }
+        )
+        .onAppear { feedLog.info("[feed] id=\(self.video.id) title=\(self.video.title)") }
+        .onChange(of: isFocused) { _, newValue in
+            focusLog.info("[VideoCard] isFocused=\(newValue) id=\(self.video.id)")
+            #if canImport(WebKit)
+            if newValue, !video.isShort {
+                let videoId = video.id
+                Task(priority: .background) {
+                    await YouTubeWebViewHLSExtractor.preWarm(videoId: videoId)
                 }
-                #endif
             }
-            // Radius 0 when unfocused: a transparent shadow still costs a blur pass per card,
-            // and a whole grid of cards is on screen at once.
-            .shadow(color: isFocused ? .white.opacity(0.9) : .clear, radius: isFocused ? 18 : 0, x: 0, y: 0)
-            .scaleEffect(isFocused ? 1.08 : 1.0)
-            .zIndex(isFocused ? 1 : 0)
-            .animation(.easeInOut(duration: 0.15), value: isFocused)
-            .alert(item: $watchLaterAlert) { item in
-                Alert(title: Text(item.title), message: Text(item.message), dismissButton: .default(Text("OK")))
-            }
-            .sheet(item: $playlistPickerMode) { mode in
-                PlaylistPickerSheet(
-                    mode: mode, video: video, sourcePlaylistId: effectivePlaylistId, api: api,
-                    onFinished: handlePlaylistPickerResult
-                )
-            }
+            #endif
+        }
+        .zIndex(isFocused ? 1 : 0)
+        .alert(item: $watchLaterAlert) { item in
+            Alert(title: Text(item.title), message: Text(item.message), dismissButton: .default(Text("OK")))
+        }
+        .sheet(item: $playlistPickerMode) { mode in
+            PlaylistPickerSheet(
+                mode: mode, video: video, sourcePlaylistId: effectivePlaylistId, api: api,
+                onFinished: handlePlaylistPickerResult
+            )
+        }
         #else
         cardContent
             .onAppear { feedLog.info("[feed] id=\(self.video.id) title=\(self.video.title)") }

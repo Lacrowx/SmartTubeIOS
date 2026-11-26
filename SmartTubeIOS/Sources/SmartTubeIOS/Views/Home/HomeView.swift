@@ -193,7 +193,6 @@ public struct HomeView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(.ultraThinMaterial)
         .focusSection()
         .defaultFocus($focusedSection, selectedSection)
         .accessibilityElement(children: .contain)
@@ -240,27 +239,11 @@ public struct HomeView: View {
             }
         }
         #if os(tvOS)
-        let isFocused = focusedSection == section
         return Button(action: action) {
             Text(section.title)
                 .font(.headline)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 12)
-                .background(
-                    (isSelected || isFocused) ? Color.primary : Color.secondary.opacity(0.15),
-                    in: Capsule()
-                )
-                .foregroundStyle(
-                    (isSelected || isFocused)
-                        ? Color(white: colorScheme == .dark ? 0 : 1)
-                        : Color.primary
-                )
-                .focusEffectDisabled()
         }
-        .buttonStyle(.borderless)
-        .scaleEffect(isFocused ? 1.12 : 1.0)
-        .animation(.easeInOut(duration: 0.15), value: focusedSection)
-        .animation(.easeInOut(duration: 0.15), value: selectedSection)
+        .buttonStyle(.tvChip(isSelected: isSelected))
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .accessibilityLabel(section.title)
         .accessibilityIdentifier("chip.\(section.title)")
@@ -370,7 +353,7 @@ public struct HomeView: View {
                 .font(.headline)
                 .foregroundStyle(.secondary)
             Button("Sign In") { showSignIn = true }
-                .buttonStyle(.borderedProminent)
+                .primaryActionButtonStyle()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
@@ -443,7 +426,7 @@ public struct HomeView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Button("Retry") { homeVM.load() }
-                .buttonStyle(.borderedProminent)
+                .primaryActionButtonStyle()
                 .accessibilityIdentifier("home.retryButton")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -812,7 +795,7 @@ public struct HomeView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                 Button("Sign In") { showSignIn = true }
-                    .buttonStyle(.borderedProminent)
+                    .primaryActionButtonStyle()
             } else if !auth.isSignedIn && (selectedSection.type == .subscriptions || selectedSection.type == .channels)
             {
                 Image(systemName: "person.badge.plus")
@@ -827,7 +810,7 @@ public struct HomeView: View {
                 Button("Search") {
                     NotificationCenter.default.post(name: .navigateToSearch, object: nil)
                 }
-                .buttonStyle(.borderedProminent)
+                .primaryActionButtonStyle()
             } else {
                 Image(systemName: AppSymbol.tvPlay)
                     .font(.system(size: 60))
@@ -836,7 +819,7 @@ public struct HomeView: View {
                     .font(.title3)
                     .foregroundStyle(.secondary)
                 Button("Refresh") { sectionVM.loadContent(refresh: true) }
-                    .buttonStyle(.borderedProminent)
+                    .primaryActionButtonStyle()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

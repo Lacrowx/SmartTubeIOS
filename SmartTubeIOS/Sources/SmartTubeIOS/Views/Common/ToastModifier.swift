@@ -38,10 +38,14 @@ private struct ToastModifier: ViewModifier {
         if let text = message {
             Text(text)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
+                #if os(tvOS)
+                .glassEffect(.regular, in: Capsule())
+                #else
+                .foregroundStyle(.white)
                 .background(.black.opacity(0.72), in: Capsule())
+                #endif
                 .padding(.bottom, 32)
                 .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .bottom)))
                 .accessibilityIdentifier("player.toast")
