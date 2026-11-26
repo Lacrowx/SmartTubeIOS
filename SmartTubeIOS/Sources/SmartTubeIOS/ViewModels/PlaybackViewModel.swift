@@ -320,6 +320,10 @@ public final class PlaybackViewModel {
     /// progress. Suppresses the rate-observer's stall detection/recovery so a
     /// deliberate interruption-pause isn't mistaken for a playback stall (#244).
     var isHandlingAudioInterruption: Bool = false
+    /// True while Apple's AVPlayerViewController owns play/pause (tvOS native player trial).
+    /// The rate observer then treats rate changes as the user's play/pause and only syncs
+    /// `isPlaying`, instead of treating a pause as a stall and resuming playback.
+    var transportIsSystemOwned: Bool = false
     /// Captures `isPlaying` at the start of an audio interruption so playback can be
     /// resumed on `.ended` only if it was actually playing before the call (#244).
     var wasPlayingBeforeInterruption: Bool = false

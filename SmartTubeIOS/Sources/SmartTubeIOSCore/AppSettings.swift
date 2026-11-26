@@ -247,6 +247,10 @@ public struct AppSettings: Codable {
     }
     public var tvDisplayMode: TVDisplayMode
 
+    /// tvOS: play in the app's own player overlay instead of Apple's player
+    /// (AVPlayerViewController). Kept for one release as a way back; off by default.
+    public var tvClassicPlayer: Bool
+
     /// Whether adaptive-format selection prefers H.264. On tvOS the Video Codec picker
     /// replaces the "Prefer H.264 Codec" toggle, so choosing H.264 there is the preference.
     public var prefersH264Formats: Bool {
@@ -405,6 +409,7 @@ public struct AppSettings: Codable {
         preferH264 = false
         tvVideoCodec = .vp9
         tvDisplayMode = .matchVideo
+        tvClassicPlayer = false
         iCloudSyncEnabled = false
         #if os(macOS)
         useTOSPlayerOnMac = true
@@ -484,6 +489,7 @@ extension AppSettings {
         case preferH264
         case tvVideoCodec
         case tvDisplayMode
+        case tvClassicPlayer
         case iCloudSyncEnabled
         case useTOSPlayerOnMac
     }
@@ -555,6 +561,7 @@ extension AppSettings {
         tvVideoCodec = c.safeDecode(
             TVVideoCodec.self, forKey: .tvVideoCodec, default: preferH264 ? .h264 : d.tvVideoCodec)
         tvDisplayMode = c.safeDecode(TVDisplayMode.self, forKey: .tvDisplayMode, default: d.tvDisplayMode)
+        tvClassicPlayer = c.safeDecode(Bool.self, forKey: .tvClassicPlayer, default: d.tvClassicPlayer)
         iCloudSyncEnabled = c.safeDecode(Bool.self, forKey: .iCloudSyncEnabled, default: d.iCloudSyncEnabled)
         useTOSPlayerOnMac = c.safeDecode(Bool.self, forKey: .useTOSPlayerOnMac, default: d.useTOSPlayerOnMac)
     }

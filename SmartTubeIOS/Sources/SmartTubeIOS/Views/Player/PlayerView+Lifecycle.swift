@@ -586,8 +586,14 @@ extension PlayerView {
         // avoid conditional-compilation mid-chain (not allowed outside @ViewBuilder).
         Group {
             #if os(tvOS)
-            tvosPlayerChangeModifiers
-                .toolbar(.hidden, for: .tabBar)
+            if useNativePlayer {
+                nativePlayer
+                    .ignoresSafeArea()
+                    .toolbar(.hidden, for: .tabBar)
+            } else {
+                tvosPlayerChangeModifiers
+                    .toolbar(.hidden, for: .tabBar)
+            }
             #elseif os(iOS)
             playerContentView
                 .navigationBarHidden(true)

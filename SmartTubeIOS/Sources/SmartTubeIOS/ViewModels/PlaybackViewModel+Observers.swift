@@ -40,6 +40,22 @@ extension PlaybackViewModel {
         }
     }
 
+    /// While Apple's player owns play/pause, a rate change is the user's play/pause: sync
+    /// `isPlaying` and skip stall handling (which would resume a paused video). Returns true
+    /// when handled.
+    private func followSystemTransport(rate: Float) -> Bool {
+        guard transportIsSystemOwned, !isSwappingItem else { return false }
+        let playing = rate != 0
+        if playing != isPlaying {
+            isPlaying = playing
+            playerLog.notice("[rateObserver] system player set rate=\(rate) — isPlaying=\(playing)")
+            #if canImport(UIKit)
+            updateNowPlayingPlayback()
+            #endif
+        }
+        return true
+    }
+
     func setupRateObserver() {
         // KVO on player.rate so isPlaying stays in sync when the system externally
         // pauses the player (e.g. headphones removed, audio session interruption ends
@@ -62,6 +78,7 @@ extension PlaybackViewModel {
                 // blocking the end-of-video / autoplay-next flow (crash log confirmed
                 // via Crashlytics: stall #1–4 at t=15s for a 15.3 s video).
                 let nearEnd = self.duration > 0 && self.currentTime >= self.duration - 1.0
+                if self.followSystemTransport(rate: newRate) { return }
                 let playerWentSilent =
                     newRate == 0 && self.isPlaying && !self.isSwappingItem && !self.isHandlingAudioInterruption
                     && !nearEnd

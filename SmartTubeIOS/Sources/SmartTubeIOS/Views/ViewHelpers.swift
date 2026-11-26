@@ -143,6 +143,15 @@ enum AppSymbol {
     static let thumbsUp = "hand.thumbsup"
     static let thumbsDown = "hand.thumbsdown"
 
+    // MARK: - Player menus (tvOS transport bar)
+    static let captions = "captions.bubble"
+    static let audioLanguage = "globe"
+    static let quality = "film.stack"
+    static let stats = "chart.bar.xaxis"
+    static let more = "ellipsis.circle"
+    static let sleepTimer = "moon.zzz"
+    static let shuffle = "shuffle"
+
     // MARK: - Actions
     static let checkmark = "checkmark"
     static let xmark = "xmark"

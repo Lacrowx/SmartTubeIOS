@@ -239,6 +239,7 @@ public struct SettingsView: View {
                     Text(mode.pickerLabel).tag(mode)
                 }
             }
+            Toggle("Classic Player", isOn: $store.settings.tvClassicPlayer)
             #endif
         }
     }

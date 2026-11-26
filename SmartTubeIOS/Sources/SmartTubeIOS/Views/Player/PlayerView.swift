@@ -101,6 +101,8 @@ public struct PlayerView: View {
     @FocusState var captionPickerFocused: Bool
     @FocusState var audioTrackPickerFocused: Bool
     @FocusState var skipToastButtonFocused: Bool
+    /// Apple's player (AVPlayerViewController) unless Settings → Classic Player is on.
+    var useNativePlayer: Bool { !store.settings.tvClassicPlayer }
     #endif
 
     /// Scales player control icon sizes up on iPad so they're easier to tap.
