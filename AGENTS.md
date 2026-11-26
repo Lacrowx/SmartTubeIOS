@@ -1,6 +1,6 @@
 # SmartTube — agent guide
 
-Native Swift/SwiftUI YouTube client for iOS/iPadOS (17+), macOS Catalyst (14+) and tvOS (17+).
+Native Swift/SwiftUI YouTube client for iOS/iPadOS (17+), macOS Catalyst (14+) and tvOS (26+).
 Package `SmartTubeIOS/` (targets `SmartTubeIOSCore` = Foundation-only models/API/stores,
 `SmartTubeIOS` = SwiftUI views, view models, services) + Xcode project `SmartTubeApp/`
 (iOS+Catalyst app, tvOS app, Share/Safari extensions, Download widget, UI-test targets).
