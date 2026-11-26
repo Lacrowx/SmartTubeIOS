@@ -711,7 +711,7 @@ extension InnerTubeAPI {
                 let bitrate = f["bitrate"] as? Int
                 return VideoFormat(
                     label: quality, width: width, height: height, fps: fps, mimeType: mimeType, url: url,
-                    bitrate: bitrate)
+                    bitrate: bitrate, isOriginalAudio: Self.isOriginalAudio(format: f))
             }
         }
 
@@ -914,6 +914,26 @@ extension InnerTubeAPI {
         let visitorMonitoring: String
         let ofParam: String
         let playlistId: String?
+    }
+
+    /// Original vs dubbed for one `adaptiveFormats` entry of a multi-language video, from its
+    /// `audioTrack` (display name, `audioIsDefault`) and `xtags` (base64 protobuf with
+    /// `acont=original` / `acont=dubbed-auto`). `nil` when the format has no `audioTrack`.
+    static func isOriginalAudio(format: [String: Any]) -> Bool? {
+        guard let track = format["audioTrack"] as? [String: Any] else { return nil }
+        let name = (track["displayName"] as? String ?? "").lowercased()
+        var tags = ""
+        if let xtags = format["xtags"] as? String {
+            let base64 =
+                xtags.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+                + String(repeating: "=", count: (4 - xtags.count % 4) % 4)
+            if let data = Data(base64Encoded: base64) {
+                tags = String(data: data, encoding: .isoLatin1) ?? ""
+            }
+        }
+        if name.contains("original") || tags.contains("original") { return true }
+        if name.contains("dubbed") || tags.contains("dubbed") { return false }
+        return track["audioIsDefault"] as? Bool
     }
 
     /// Extracts `ei`/`vm`/`of`/`plid` from the watchtime tracking URL.

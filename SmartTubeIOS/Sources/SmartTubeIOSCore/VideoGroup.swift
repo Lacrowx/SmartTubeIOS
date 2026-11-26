@@ -194,10 +194,13 @@ public struct VideoFormat: Identifiable, Hashable, Sendable {
     public var mimeType: String
     public var url: URL?
     public var bitrate: Int?
+    /// Audio formats of multi-language videos: `true` for the creator's original track,
+    /// `false` for a dub, `nil` when YouTube gives no language info (single-track videos).
+    public var isOriginalAudio: Bool?
 
     public init(
         id: UUID = UUID(), label: String, width: Int, height: Int, fps: Int, mimeType: String, url: URL? = nil,
-        bitrate: Int? = nil
+        bitrate: Int? = nil, isOriginalAudio: Bool? = nil
     ) {
         self.id = id
         self.label = label
@@ -207,6 +210,7 @@ public struct VideoFormat: Identifiable, Hashable, Sendable {
         self.mimeType = mimeType
         self.url = url
         self.bitrate = bitrate
+        self.isOriginalAudio = isOriginalAudio
     }
 
     /// Quality tier from YouTube's own label (`"2160p60"` → 2160), falling back to the pixel

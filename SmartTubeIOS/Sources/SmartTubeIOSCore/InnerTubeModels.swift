@@ -135,13 +135,21 @@ public struct PlayerInfo: Sendable {
         return videoOnly.sorted { ($0.bitrate ?? 0) > ($1.bitrate ?? 0) }.first?.url
     }
 
-    /// Best adaptive audio-only MP4 URL.
+    /// Best adaptive audio-only MP4 URL: the original-language track first (multi-language
+    /// videos list dubs too), then the highest bitrate.
     /// Used together with bestAdaptiveVideoURL for the merge fallback.
     public var bestAdaptiveAudioURL: URL? {
         let audioOnly = formats.filter {
             $0.mimeType.hasPrefix("audio/mp4") && $0.url != nil
         }
-        return audioOnly.sorted { ($0.bitrate ?? 0) > ($1.bitrate ?? 0) }.first?.url
+        func rank(_ format: VideoFormat) -> Int {
+            switch format.isOriginalAudio {
+            case true: 2
+            case nil: 1
+            case false: 0
+            }
+        }
+        return audioOnly.max { (rank($0), $0.bitrate ?? 0) < (rank($1), $1.bitrate ?? 0) }?.url
     }
 
     /// Best AV1 video-only MP4 format taller than 1080p and no taller than `maximumHeight`
