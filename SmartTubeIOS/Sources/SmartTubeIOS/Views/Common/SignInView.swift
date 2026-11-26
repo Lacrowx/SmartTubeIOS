@@ -16,6 +16,11 @@ public struct SignInView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var showError = false
+    #if os(tvOS)
+    /// The activation code takes focus once it's shown, so a stray click doesn't hit Cancel
+    /// (the only button on the screen).
+    @FocusState private var codeFocused: Bool
+    #endif
 
     public init() {}
 
@@ -97,6 +102,9 @@ public struct SignInView: View {
         .onChange(of: auth.isSignedIn) { _, signedIn in
             if signedIn { dismiss() }
         }
+        .onChange(of: auth.pendingActivation?.userCode) { _, code in
+            if code != nil { codeFocused = true }
+        }
     }
 
     private var tvLoadingView: some View {
@@ -142,6 +150,9 @@ public struct SignInView: View {
                     .padding(.horizontal, 32)
                     .background(Color.secondary.opacity(0.15))
                     .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .focusable()
+                    .focused($codeFocused)
+                    .accessibilityIdentifier("signIn.userCode")
 
                 CountdownView(expiresAt: info.expiresAt) {
                     Task { await auth.beginSignIn() }

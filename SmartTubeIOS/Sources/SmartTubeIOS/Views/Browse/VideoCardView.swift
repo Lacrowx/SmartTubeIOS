@@ -415,6 +415,15 @@ public struct VideoCardView: View {
         }
     }
 
+    /// View counts and similar: `.tertiary` is too faint to read from the couch.
+    private var metadataStyle: HierarchicalShapeStyle {
+        #if os(tvOS)
+        .secondary
+        #else
+        .tertiary
+        #endif
+    }
+
     // MARK: Grid layout (default)
 
     private var gridLayout: some View {
@@ -465,7 +474,7 @@ public struct VideoCardView: View {
                     if !vc.isEmpty { Text(vc) }
                 }
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(metadataStyle)
             }
             .padding(.horizontal, 2)
         }
@@ -520,7 +529,7 @@ public struct VideoCardView: View {
                 if !vc.isEmpty {
                     Text(vc)
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(metadataStyle)
                 }
             }
             Spacer(minLength: 0)

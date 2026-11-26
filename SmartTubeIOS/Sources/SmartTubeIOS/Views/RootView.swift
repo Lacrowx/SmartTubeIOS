@@ -381,6 +381,10 @@ struct MainTVTabView: View {
             }
         }
         .environment(searchVM)
+        // The empty states' "Search" buttons.
+        .onReceive(NotificationCenter.default.publisher(for: .navigateToSearch)) { _ in
+            selectedTab = .search
+        }
         .onReceive(NotificationCenter.default.publisher(for: .activeChannelDidChange)) { _ in
             selectedTab = .home
         }

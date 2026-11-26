@@ -11,6 +11,7 @@ public struct SettingsView: View {
     @Environment(AuthService.self) private var auth
     @Environment(SettingsStore.self) private var store
     @State private var showSignIn = false
+    @State private var confirmSignOut = false
     @State private var showWebSignIn = false
     @State private var reportSent = false
     #if os(tvOS)
@@ -124,7 +125,16 @@ public struct SettingsView: View {
                     LabeledContent("Channel", value: auth.activeChannel?.name ?? "")
                 }
                 .accessibilityIdentifier("settings.channelLink")
-                Button("Sign Out", role: .destructive) { auth.signOut() }
+                // Signing back in takes a code on another device, so ask first.
+                Button("Sign Out", role: .destructive) { confirmSignOut = true }
+                    .accessibilityIdentifier("settings.signOutButton")
+                    .confirmationDialog(
+                        "Sign out of \(auth.accountName ?? "your account")?", isPresented: $confirmSignOut,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Sign Out", role: .destructive) { auth.signOut() }
+                        Button("Cancel", role: .cancel) {}
+                    }
             } else {
                 Button("Sign in with Google") { showSignIn = true }
                     .accessibilityIdentifier("settings.signInButton")

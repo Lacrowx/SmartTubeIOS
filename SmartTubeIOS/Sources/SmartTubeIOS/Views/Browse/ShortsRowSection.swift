@@ -22,14 +22,16 @@ struct ShortsRowSection: View {
     // MARK: - Constants
 
     #if os(tvOS)
-    private let cardWidth: CGFloat = 200
+    /// 150 × 267 pt: small enough that the row above the feed leaves room for more than one
+    /// row of videos on a 1080-pt screen, and all `shortsCardMaxTVCount` cards fit its width.
+    private let cardWidth: CGFloat = 150
     #else
     /// Card width on iOS/iPadOS: ~120 pt gives roughly 3 cards on an iPhone screen.
     private let cardWidth: CGFloat = 120
     #endif
 
     /// Maximum cards shown on tvOS in horizontal mode. A 1920-pt screen holds
-    /// ~9 cards at 200 pt each; capping prevents overflow and keeps focus manageable.
+    /// 9 cards at 150 pt each; capping prevents overflow and keeps focus manageable.
     private let shortsCardMaxTVCount = 9
 
     // MARK: - Body

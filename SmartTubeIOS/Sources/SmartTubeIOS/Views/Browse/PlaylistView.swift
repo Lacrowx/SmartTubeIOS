@@ -143,11 +143,11 @@ public struct PlaylistView: View {
             } else {
                 #if os(tvOS)
                 let columnCount = 4
-                LazyVStack(alignment: .leading, spacing: 12) {
+                LazyVStack(alignment: .leading, spacing: videoGridRowSpacing) {
                     ForEach(Array(stride(from: 0, to: displayVideos.count, by: columnCount)), id: \.self) { startIdx in
                         let rowVideos = Array(
                             displayVideos[startIdx..<min(startIdx + columnCount, displayVideos.count)])
-                        HStack(alignment: .top, spacing: 12) {
+                        HStack(alignment: .top, spacing: videoGridRowSpacing) {
                             ForEach(rowVideos) { video in
                                 VideoCardView(
                                     video: video, compact: false, currentPlaylistId: playlistId,
@@ -236,6 +236,9 @@ public struct PlaylistView: View {
             Text("No videos in this playlist")
                 .font(.headline)
                 .foregroundStyle(.secondary)
+            Button("Refresh") { vm.load(playlistId: playlistId, refresh: true) }
+                .primaryActionButtonStyle()
+                .accessibilityIdentifier("playlistView.refreshButton")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

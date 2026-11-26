@@ -44,7 +44,9 @@ public struct ChannelView: View {
             }
         }
         .navigationTitle(vm.channel?.title ?? "Channel")
-        .onAppear { vm.load(channelId: channelId) }
+        // Only the first time: coming back from the player must keep the loaded videos (and
+        // with them focus and scroll position).
+        .onAppear { if vm.channel == nil, !vm.isLoading { vm.load(channelId: channelId) } }
         .task(id: vm.channel?.id) {
             guard let id = vm.channel?.id else { return }
             isFollowedLocally = await LocalSubscriptionStore.shared.isFollowing(id)
@@ -71,9 +73,16 @@ public struct ChannelView: View {
             ShortsPlayerView(videos: target.videos, startIndex: target.startIndex, api: api)
         }
         #endif
-        .alert("Error", isPresented: .constant(vm.error != nil), presenting: vm.error) { _ in
-            Button("Retry") { vm.load(channelId: channelId) }
-            Button("Dismiss", role: .cancel) {}
+        .alert(
+            "Error",
+            isPresented: Binding(get: { vm.error != nil }, set: { if !$0 { vm.error = nil } }),
+            presenting: vm.error
+        ) { _ in
+            Button("Retry") {
+                vm.error = nil
+                vm.load(channelId: channelId)
+            }
+            Button("Dismiss", role: .cancel) { vm.error = nil }
         } message: { err in
             Text(err.localizedDescription)
         }
@@ -184,10 +193,10 @@ public struct ChannelView: View {
             } else {
                 #if os(tvOS)
                 let columnCount = 4
-                LazyVStack(alignment: .leading, spacing: 12) {
+                LazyVStack(alignment: .leading, spacing: videoGridRowSpacing) {
                     ForEach(Array(stride(from: 0, to: videos.count, by: columnCount)), id: \.self) { startIdx in
                         let rowVideos = Array(videos[startIdx..<min(startIdx + columnCount, videos.count)])
-                        HStack(alignment: .top, spacing: 12) {
+                        HStack(alignment: .top, spacing: videoGridRowSpacing) {
                             ForEach(rowVideos) { video in
                                 VideoCardView(video: video, compact: false, onSelect: { selectedVideo = video })
                                     .frame(maxWidth: .infinity)

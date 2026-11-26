@@ -319,6 +319,10 @@ public struct SearchView: View {
             Text("No results for \"\(vm.query)\"")
                 .font(.headline)
                 .foregroundStyle(.secondary)
+            // A failed search also ends here.
+            Button("Try Again") { vm.search() }
+                .primaryActionButtonStyle()
+                .accessibilityIdentifier("search.retryButton")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()

@@ -177,16 +177,7 @@ public struct LibraryView: View {
                             ProgressView().frame(maxWidth: .infinity).padding()
                         }
                     }
-                    .refreshable {
-                        browseVM.loadContent(
-                            for: BrowseSection(
-                                id: selectedSection.id,
-                                title: selectedSection.rawValue,
-                                type: selectedSection.browseSectionType
-                            ),
-                            refresh: true
-                        )
-                    }
+                    .refreshable { reloadSection() }
                 }
             }
         }
@@ -244,38 +235,56 @@ public struct LibraryView: View {
         }
     }
 
+    // A Button, not a tap gesture: tvOS can only focus (and select) buttons.
     @ViewBuilder private var currentQueueRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "list.number")
-                .font(.title2)
-                .frame(width: 44, height: 44)
-                .foregroundStyle(Color.accentColor)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Current Queue")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.primary)
-                Text("\(queueVideosCount) video\(queueVideosCount == 1 ? "" : "s")")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .contentShape(Rectangle())
-        .onTapGesture {
+        Button {
             selectedPlaylist = Video(
                 id: CurrentQueueStore.playlistID,
                 title: "Current Queue",
                 channelTitle: ""
             )
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "list.number")
+                    .font(.title2)
+                    .frame(width: 44, height: 44)
+                    .foregroundStyle(Color.accentColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Current Queue")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.primary)
+                    Text("\(queueVideosCount) video\(queueVideosCount == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
         }
+        #if os(tvOS)
+        .buttonStyle(.card)
+        #else
+        .buttonStyle(.plain)
+        #endif
         .accessibilityIdentifier("library.currentQueueRow")
         Divider().padding(.horizontal)
+    }
+
+    private func reloadSection() {
+        browseVM.loadContent(
+            for: BrowseSection(
+                id: selectedSection.id,
+                title: selectedSection.rawValue,
+                type: selectedSection.browseSectionType
+            ),
+            refresh: true
+        )
     }
 
     @ViewBuilder private var emptyLibraryView: some View {
@@ -302,6 +311,10 @@ public struct LibraryView: View {
                 Text("Nothing here yet")
                     .font(.headline)
                     .foregroundStyle(.secondary)
+                // Also the way back after a failed load (tvOS has no pull-to-refresh).
+                Button("Refresh") { reloadSection() }
+                    .primaryActionButtonStyle()
+                    .accessibilityIdentifier("library.refreshButton")
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
