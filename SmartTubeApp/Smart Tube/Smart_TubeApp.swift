@@ -45,6 +45,10 @@ struct SmartTubeTVApp: App {
         #if ENABLE_DOWNLOADS
         _cardDownloadService = State(initialValue: VideoDownloadService(api: api))
         #endif
+        #if DEBUG
+        // `--debug-probe-web-session[=<videoId>]`: which web-session request returns direct 4K URLs.
+        Task { await WebSessionFormatProbe.runIfRequested() }
+        #endif
     }
 
     var body: some Scene {

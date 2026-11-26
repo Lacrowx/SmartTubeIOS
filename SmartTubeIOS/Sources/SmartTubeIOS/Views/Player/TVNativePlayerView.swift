@@ -102,6 +102,9 @@ struct TVNativePlayerView: UIViewControllerRepresentable {
         }
 
         context.coordinator.attach(controller: controller, player: vm.player)
+        #if DEBUG
+        PlaybackDiagnosticsDump.schedule(vm: vm)
+        #endif
         return controller
     }
 
