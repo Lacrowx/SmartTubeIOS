@@ -138,6 +138,13 @@ public struct HomeView: View {
                 selectedSection = first
             }
         }
+        #if os(tvOS)
+        // Apple TV apps stay alive in the background for hours; reload a stale Home feed
+        // when the app comes back. Skipped before the first load, which sign-in starts.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active, auth.isSignedIn, homeVM.loadedAt != nil { homeVM.refreshIfStale() }
+        }
+        #endif
         .task(id: auth.accessToken) {
             await homeVM.updateAuthToken(auth.accessToken)
             await sectionVM.updateAuthToken(auth.accessToken)
@@ -173,6 +180,16 @@ public struct HomeView: View {
             ForEach(visibleSections) { section in
                 chipButton(section: section)
             }
+            // `.refreshable` does nothing on tvOS; this is the visible way to reload.
+            Button {
+                refresh(selectedSection)
+            } label: {
+                Image(systemName: AppSymbol.refresh)
+                    .font(.headline)
+            }
+            .buttonStyle(.glass)
+            .accessibilityLabel("Refresh")
+            .accessibilityIdentifier("home.refreshButton")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -208,11 +225,18 @@ public struct HomeView: View {
             let isNewSection = selectedSection != section
             if isNewSection {
                 select(section)
-            } else if section.type != .home, sectionVM.videoGroups.isEmpty && !sectionVM.isLoading {
-                // Same chip re-tapped on an empty section — retry the load.
-                // This handles failed fetches or cases where an observation gap
-                // left the view showing an empty state despite data being available.
-                sectionVM.reload(section: section)
+            } else {
+                #if os(tvOS)
+                // Re-clicking the selected chip reloads it (tvOS has no pull-to-refresh).
+                refresh(section)
+                #else
+                if section.type != .home, sectionVM.videoGroups.isEmpty && !sectionVM.isLoading {
+                    // Same chip re-tapped on an empty section — retry the load.
+                    // This handles failed fetches or cases where an observation gap
+                    // left the view showing an empty state despite data being available.
+                    sectionVM.reload(section: section)
+                }
+                #endif
             }
         }
         #if os(tvOS)
@@ -267,6 +291,18 @@ public struct HomeView: View {
         selectedSection = section
         if section.type != .home { sectionVM.select(section: section) }
     }
+
+    #if os(tvOS)
+    /// Reloads a section from scratch. Both reloads clear the loaded videos first, so the
+    /// feed is rebuilt from the top once the new page arrives.
+    private func refresh(_ section: BrowseSection) {
+        if section.type == .home {
+            if auth.isSignedIn { homeVM.load() }
+        } else {
+            sectionVM.loadContent(refresh: true, source: "refresh")
+        }
+    }
+    #endif
 
     #if os(iOS)
     // MARK: - Swipe between sections (#159)
@@ -347,9 +383,11 @@ public struct HomeView: View {
 
     private var homeShelves: some View {
         Group {
-            if homeVM.isLoadingAny && homeVM.mergedVideos.isEmpty {
+            if homeVM.mergedVideos.isEmpty && (homeVM.isLoadingAny || homeVM.isRefreshing) {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if homeVM.mergedVideos.isEmpty && homeVM.shortsVideos.isEmpty {
+                homeLoadFailed
             } else {
                 let hideShorts = store.settings.hideShorts
                 let regularVideos = homeVM.homeRegularVideos
@@ -391,6 +429,28 @@ public struct HomeView: View {
                 }
             }
         }
+    }
+
+    /// Shown when the Home load finished without any videos (network error, bot check).
+    private var homeLoadFailed: some View {
+        VStack(spacing: 16) {
+            Image(systemName: AppSymbol.warning)
+                .font(.system(size: 60))
+                .foregroundStyle(.secondary)
+            Text("Couldn't load your feed")
+                .font(.title3)
+            Text("Check your connection and try again.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Button("Retry") { homeVM.load() }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("home.retryButton")
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("home.loadFailed")
+        #if os(iOS)
+        .simultaneousGesture(sectionSwipe)
+        #endif
     }
 
     // MARK: - Section feed  (non-Home chips)

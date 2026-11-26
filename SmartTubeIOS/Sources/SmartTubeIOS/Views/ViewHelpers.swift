@@ -156,6 +156,7 @@ enum AppSymbol {
     static let checkmark = "checkmark"
     static let xmark = "xmark"
     static let xmarkCircle = "xmark.circle.fill"
+    static let refresh = "arrow.clockwise"
     static let share = "square.and.arrow.up"
     static let copyDoc = "doc.on.doc"
     static let download = "arrow.down.to.line"
