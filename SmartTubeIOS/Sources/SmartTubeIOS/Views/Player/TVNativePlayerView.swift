@@ -51,7 +51,7 @@ struct TVNativePlayerState: Equatable {
         sleepTimerMinutes = vm.sleepTimerMinutes
         audioOnly = vm.isAudioOnlyMode
         queueShuffle = current.playlistId == CurrentQueueStore.playlistID ? settings.queueShuffleEnabled : nil
-        hasChannel = current.channelId?.isEmpty == false
+        hasChannel = (current.channelId ?? video.channelId)?.isEmpty == false
     }
 }
 

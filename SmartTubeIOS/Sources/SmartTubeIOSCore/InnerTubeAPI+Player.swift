@@ -841,6 +841,7 @@ extension InnerTubeAPI {
             id: videoId,
             title: title,
             channelTitle: channelTitle,
+            channelId: videoDetails?["channelId"] as? String,
             description: description,
             thumbnailURL: thumbURL,
             duration: duration,
