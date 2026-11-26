@@ -52,6 +52,12 @@ struct AppEntry: App {
     private static let pendingRSSFeedKey = "pendingRSSFeedURL"
 
     init() {
+        #if os(tvOS)
+        // Thumbnails load via AsyncImage → URLSession.shared, whose default URLCache is too
+        // small for a screenful of cards, so scrolling back downloads them again. Memory is
+        // kept modest for Apple TV; the disk part lives in Caches, which tvOS may purge.
+        URLCache.shared = URLCache(memoryCapacity: 32 * 1024 * 1024, diskCapacity: 256 * 1024 * 1024, directory: nil)
+        #endif
         // #92: read the setting before configuring Firebase (and before constructing
         // anything below that might log through CrashlyticsLogger) so that when
         // analytics are disabled, FirebaseApp.configure() is never called at all —

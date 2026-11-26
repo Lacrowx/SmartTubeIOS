@@ -374,7 +374,9 @@ public struct VideoCardView: View {
                 }
                 #endif
             }
-            .shadow(color: isFocused ? .white.opacity(0.9) : .clear, radius: 18, x: 0, y: 0)
+            // Radius 0 when unfocused: a transparent shadow still costs a blur pass per card,
+            // and a whole grid of cards is on screen at once.
+            .shadow(color: isFocused ? .white.opacity(0.9) : .clear, radius: isFocused ? 18 : 0, x: 0, y: 0)
             .scaleEffect(isFocused ? 1.08 : 1.0)
             .zIndex(isFocused ? 1 : 0)
             .animation(.easeInOut(duration: 0.15), value: isFocused)
